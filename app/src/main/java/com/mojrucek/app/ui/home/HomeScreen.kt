@@ -72,14 +72,14 @@ fun HomeScreen(
         }
     ) { padding ->
         if (state.isLoading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
             return@Scaffold
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -256,7 +256,7 @@ private fun SuggestedRecipeCard(match: RecipeMatchResult, onClick: () -> Unit) {
                     color = when (match.readiness) {
                         Readiness.CAN_COOK_NOW -> MaterialTheme.colorScheme.primary
                         Readiness.ALMOST_READY -> MaterialTheme.colorScheme.secondary
-                        Readiness.NEEDS_SHOPPING -> MaterialTheme.colorScheme.outline
+                        Readiness.NEEDS_SHOPPING -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                 )
             }

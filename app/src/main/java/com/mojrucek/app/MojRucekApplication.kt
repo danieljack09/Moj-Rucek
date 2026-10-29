@@ -2,6 +2,7 @@ package com.mojrucek.app
 
 import android.app.Application
 import com.mojrucek.app.di.AppContainer
+import com.mojrucek.app.notification.ExpiryReminderScheduler
 import com.mojrucek.app.notification.NotificationHelper
 import com.mojrucek.app.notification.ReminderScheduler
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +21,7 @@ class MojRucekApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
         NotificationHelper.createChannel(this)
+        ExpiryReminderScheduler.scheduleDailyCheck(this)
 
         applicationScope.launch {
             container.settingsRepository.ensureInitialized()

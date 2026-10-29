@@ -12,28 +12,33 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,10 +51,15 @@ import androidx.compose.ui.unit.dp
 import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
+import com.mojrucek.app.domain.usecase.WeekCalculator
 import com.mojrucek.app.ui.components.CategoryChipsRow
 import com.mojrucek.app.ui.components.CategoryEmojiBadge
 import com.mojrucek.app.ui.components.EmptyState
 import com.mojrucek.app.ui.components.formatQuantityWithUnit
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -215,6 +225,22 @@ private fun stepFor(unit: MeasurementUnit): Double = when (unit.group) {
     com.mojrucek.app.domain.unit.UnitGroup.COUNT -> 1.0
 }
 
+private val expirationDateFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+/** A short "Рок: ..." label for an ingredient row, and whether it should read as urgent (red). */
+private fun expirationLabel(expirationDateEpochDay: Long?): Pair<String, Boolean>? {
+    if (expirationDateEpochDay == null) return null
+    val today = WeekCalculator.today().toEpochDay()
+    val daysLeft = expirationDateEpochDay - today
+    return when {
+        daysLeft < 0 -> "Истечено" to true
+        daysLeft == 0L -> "Истекува денес" to true
+        daysLeft == 1L -> "Истекува утре" to true
+        daysLeft <= 3L -> "Истекува за $daysLeft дена" to true
+        else -> "Рок: ${LocalDate.ofEpochDay(expirationDateEpochDay).format(expirationDateFormatter)}" to false
+    }
+}
+
 @Composable
 private fun IngredientRow(
     ingredient: Ingredient,
@@ -239,6 +265,13 @@ private fun IngredientRow(
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (ingredient.isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    expirationLabel(ingredient.expirationDateEpochDay)?.let { (text, isUrgent) ->
+                        Text(
+                            text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isUrgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             IconButton(onClick = onDecrease) { Icon(Icons.Filled.Remove, contentDescription = "Намали") }
@@ -277,6 +310,8 @@ private fun IngredientFormDialog(
     var lowStockText by remember { mutableStateOf(initial?.lowStockThreshold?.toString() ?: "") }
     var notes by remember { mutableStateOf(initial?.notes ?: "") }
     var unitMenuExpanded by remember { mutableStateOf(false) }
+    var expirationDateEpochDay by remember { mutableStateOf(initial?.expirationDateEpochDay) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
     val quantity = quantityText.toDoubleOrNull()
     val isValid = name.isNotBlank() && quantity != null && quantity >= 0.0
@@ -339,6 +374,21 @@ private fun IngredientFormDialog(
                         }
                     }
                 }
+                Text("Рок на траење (опционално)", style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Text(
+                            expirationDateEpochDay?.let { LocalDate.ofEpochDay(it).format(expirationDateFormatter) }
+                                ?: "Не е поставено"
+                        )
+                    }
+                    if (expirationDateEpochDay != null) {
+                        IconButton(onClick = { expirationDateEpochDay = null }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Отстрани рок на траење")
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = lowStockText,
                     onValueChange = { lowStockText = it },
@@ -364,7 +414,7 @@ private fun IngredientFormDialog(
                             category = category,
                             quantity = quantity ?: 0.0,
                             unit = unit,
-                            expirationDateEpochDay = initial?.expirationDateEpochDay,
+                            expirationDateEpochDay = expirationDateEpochDay,
                             lowStockThreshold = lowStockText.toDoubleOrNull(),
                             notes = notes.ifBlank { null }
                         )
@@ -376,4 +426,27 @@ private fun IngredientFormDialog(
             TextButton(onClick = onDismiss) { Text("Откажи") }
         }
     )
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = (expirationDateEpochDay ?: WeekCalculator.today().toEpochDay())
+                .let { LocalDate.ofEpochDay(it).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() }
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        expirationDateEpochDay = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()
+                    }
+                    showDatePicker = false
+                }) { Text("Избери") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Откажи") }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }

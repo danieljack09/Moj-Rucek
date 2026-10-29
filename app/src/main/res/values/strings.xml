@@ -4,4 +4,7 @@
     <string name="notification_channel_sunday_desc">Потсетник секоја недела за планирање на ручеци</string>
     <string name="notification_sunday_title">Време е за планирање на ручеците!</string>
     <string name="notification_sunday_text">Отвори го Мој Ручек за да ја испланираш следната недела и да ја подготвиш листата за пазарење.</string>
+    <string name="notification_channel_expiry">Потсетник за рок на траење</string>
+    <string name="notification_channel_expiry_desc">Потсетник кога некоја намирница наближува кон рокот на траење</string>
+    <string name="notification_expiry_title">Намирница наближува кон рокот на траење</string>
 </resources>
