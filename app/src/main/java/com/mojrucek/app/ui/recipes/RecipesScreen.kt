@@ -128,7 +128,7 @@ fun RecipesScreen(
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(state.items, key = { it.match.recipeId }) { item ->
                         RecipeCard(
@@ -148,7 +148,7 @@ private fun RecipeCard(item: RecipeListItem, onClick: () -> Unit, onToggleFavori
     val match = item.match
     Card(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {

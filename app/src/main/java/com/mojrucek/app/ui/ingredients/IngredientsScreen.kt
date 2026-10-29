@@ -13,9 +13,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -41,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
+import com.mojrucek.app.ui.components.CategoryChipsRow
+import com.mojrucek.app.ui.components.CategoryEmojiBadge
 import com.mojrucek.app.ui.components.EmptyState
 import com.mojrucek.app.ui.components.formatQuantityWithUnit
 
@@ -51,9 +57,37 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     val pendingDuplicate by viewModel.pendingDuplicate.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Намирници") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Намирници") },
+                actions = {
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(Icons.Filled.Sort, contentDescription = "Подреди")
+                    }
+                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Име") },
+                            onClick = { viewModel.setSort(IngredientSort.NAME); showSortMenu = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Категорија") },
+                            onClick = { viewModel.setSort(IngredientSort.CATEGORY); showSortMenu = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Количина") },
+                            onClick = { viewModel.setSort(IngredientSort.QUANTITY); showSortMenu = false }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Рок на траење") },
+                            onClick = { viewModel.setSort(IngredientSort.EXPIRATION); showSortMenu = false }
+                        )
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Додади намирница")
@@ -61,16 +95,25 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            CategoryChipsRow(
+                categories = IngredientCategory.entries,
+                selected = state.categoryFilter,
+                onSelect = viewModel::setCategoryFilter,
+                counts = state.categoryCounts,
+                totalCount = state.allIngredients.size,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = viewModel::setSearchQuery,
                 label = { Text("Пребарај") },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 singleLine = true
             )
 
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
@@ -95,15 +138,14 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(state.visibleIngredients, key = { it.id }) { ingredient ->
                         IngredientRow(
                             ingredient = ingredient,
                             onIncrease = { viewModel.adjustQuantity(ingredient, stepFor(ingredient.unit)) },
                             onDecrease = { viewModel.adjustQuantity(ingredient, -stepFor(ingredient.unit)) },
-                            onFinish = { viewModel.markFinished(ingredient) },
                             onDelete = { viewModel.deleteIngredient(ingredient) },
                             onClick = { editingIngredient = ingredient }
                         )
@@ -177,27 +219,45 @@ private fun IngredientRow(
     ingredient: Ingredient,
     onIncrease: () -> Unit,
     onDecrease: () -> Unit,
-    onFinish: () -> Unit,
     onDelete: () -> Unit,
     onClick: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(ingredient.name, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "${ingredient.category.displayName} · ${formatQuantityWithUnit(ingredient.quantity, ingredient.unit)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (ingredient.isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                CategoryEmojiBadge(category = ingredient.category)
+                Column(modifier = Modifier.padding(start = 12.dp)) {
+                    Text(ingredient.name, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "${ingredient.category.displayName} · ${formatQuantityWithUnit(ingredient.quantity, ingredient.unit)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (ingredient.isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             IconButton(onClick = onDecrease) { Icon(Icons.Filled.Remove, contentDescription = "Намали") }
             IconButton(onClick = onIncrease) { Icon(Icons.Filled.Add, contentDescription = "Зголеми") }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Избриши") }
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Повеќе опции")
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Уреди") },
+                        onClick = { showMenu = false; onClick() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Избриши") },
+                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                        onClick = { showMenu = false; onDelete() }
+                    )
+                }
+            }
         }
     }
 }
@@ -215,7 +275,6 @@ private fun IngredientFormDialog(
     var unit by remember { mutableStateOf(initial?.unit ?: MeasurementUnit.PIECE) }
     var lowStockText by remember { mutableStateOf(initial?.lowStockThreshold?.toString() ?: "") }
     var notes by remember { mutableStateOf(initial?.notes ?: "") }
-    var categoryMenuExpanded by remember { mutableStateOf(false) }
     var unitMenuExpanded by remember { mutableStateOf(false) }
 
     val quantity = quantityText.toDoubleOrNull()
@@ -233,24 +292,21 @@ private fun IngredientFormDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
-                    OutlinedTextField(
-                        value = category.displayName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Категорија") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                Text("Категорија", style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CategoryEmojiBadge(category = category, size = 32.dp)
+                    Text(
+                        category.displayName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 8.dp)
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
-                        IngredientCategory.entries.forEach { c ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(c.displayName) },
-                                onClick = { category = c; categoryMenuExpanded = false }
-                            )
-                        }
-                    }
                 }
+                CategoryChipsRow(
+                    categories = IngredientCategory.entries,
+                    selected = category,
+                    onSelect = { category = it ?: IngredientCategory.DRUGO },
+                    showAllOption = false
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = quantityText,
@@ -274,7 +330,7 @@ private fun IngredientFormDialog(
                         )
                         androidx.compose.material3.ExposedDropdownMenu(expanded = unitMenuExpanded, onDismissRequest = { unitMenuExpanded = false }) {
                             MeasurementUnit.entries.forEach { u ->
-                                androidx.compose.material3.DropdownMenuItem(
+                                DropdownMenuItem(
                                     text = { Text(u.displayName) },
                                     onClick = { unit = u; unitMenuExpanded = false }
                                 )
