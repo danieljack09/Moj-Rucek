@@ -73,7 +73,7 @@ fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(state.days, key = { it.dayOfWeek }) { day ->
                     DayCard(
@@ -172,7 +172,7 @@ private fun DayCard(day: DayPlanUi, onPick: () -> Unit, onOpenRecipe: () -> Unit
     val formatter = remember { DateTimeFormatter.ofPattern("dd.MM") }
     Card(modifier = Modifier.fillMaxWidth(), onClick = if (day.recipeId != null) onOpenRecipe else onPick) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
