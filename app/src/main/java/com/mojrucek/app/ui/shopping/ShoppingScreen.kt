@@ -17,6 +17,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -210,7 +211,7 @@ private fun AddShoppingItemDialog(
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
                             modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
-                        androidx.compose.material3.ExposedDropdownMenu(expanded = unitExpanded, onDismissRequest = { unitExpanded = false }) {
+                        ExposedDropdownMenu(expanded = unitExpanded, onDismissRequest = { unitExpanded = false }) {
                             MeasurementUnit.entries.forEach { u ->
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text(u.displayName) },
@@ -229,7 +230,7 @@ private fun AddShoppingItemDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
+                    ExposedDropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
                         IngredientCategory.entries.forEach { c ->
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Text(c.displayName) },
