@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Мој Ручек</string>
+    <string name="notification_channel_sunday">Неделен потсетник</string>
+    <string name="notification_channel_sunday_desc">Потсетник секоја недела за планирање на ручеци</string>
+    <string name="notification_sunday_title">Време е за планирање на ручеците!</string>
+    <string name="notification_sunday_text">Отвори го Мој Ручек за да ја испланираш следната недела и да ја подготвиш листата за пазарење.</string>
+</resources>
