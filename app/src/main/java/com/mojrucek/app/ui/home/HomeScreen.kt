@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -82,6 +83,13 @@ fun HomeScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item {
+                Text(
+                    "Што ќе готвиме денес?",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
             item {
                 TodayLunchCard(
                     today = state.today,
@@ -153,9 +161,15 @@ fun HomeScreen(
 
 @Composable
 private fun TodayLunchCard(today: TodayMealUi?, onChangeClick: () -> Unit, onOpenRecipe: (Long) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Денешен ручек", style = MaterialTheme.typography.titleMedium)
+            Text("🍽️ Денешен ручек", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             if (today == null) {
                 Text("Нема избрано јадење за денес.", style = MaterialTheme.typography.bodyMedium)

@@ -53,7 +53,7 @@ fun MojRucekNavHost(container: AppContainer) {
                 Surface(
                     shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                     shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface
+                    color = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     NavigationBar(containerColor = Color.Transparent) {
                         bottomNavItems.forEach { item ->

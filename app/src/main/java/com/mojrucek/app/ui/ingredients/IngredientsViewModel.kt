@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class IngredientSort { NAME, CATEGORY, EXPIRATION }
+enum class IngredientSort { NAME, CATEGORY, QUANTITY, EXPIRATION }
 
 data class NewIngredientInput(
     val name: String,
@@ -32,6 +32,7 @@ data class IngredientsUiState(
     val isLoading: Boolean = true,
     val allIngredients: List<Ingredient> = emptyList(),
     val visibleIngredients: List<Ingredient> = emptyList(),
+    val categoryCounts: Map<IngredientCategory, Int> = emptyMap(),
     val searchQuery: String = "",
     val categoryFilter: IngredientCategory? = null,
     val sort: IngredientSort = IngredientSort.NAME,
@@ -67,6 +68,7 @@ class IngredientsViewModel(private val repository: IngredientRepository) : ViewM
         visible = when (f.sort) {
             IngredientSort.NAME -> visible.sortedBy { it.name.lowercase() }
             IngredientSort.CATEGORY -> visible.sortedBy { it.category.displayName }
+            IngredientSort.QUANTITY -> visible.sortedBy { it.quantity }
             IngredientSort.EXPIRATION -> visible.sortedWith(
                 compareBy(nullsLast()) { it.expirationDateEpochDay }
             )
@@ -75,6 +77,7 @@ class IngredientsViewModel(private val repository: IngredientRepository) : ViewM
             isLoading = false,
             allIngredients = all,
             visibleIngredients = visible,
+            categoryCounts = all.groupingBy { it.category }.eachCount(),
             searchQuery = f.query,
             categoryFilter = f.category,
             sort = f.sort,
