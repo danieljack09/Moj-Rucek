@@ -22,6 +22,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -328,7 +329,7 @@ private fun IngredientFormDialog(
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenuExpanded) },
                             modifier = Modifier.fillMaxWidth().menuAnchor()
                         )
-                        androidx.compose.material3.ExposedDropdownMenu(expanded = unitMenuExpanded, onDismissRequest = { unitMenuExpanded = false }) {
+                        ExposedDropdownMenu(expanded = unitMenuExpanded, onDismissRequest = { unitMenuExpanded = false }) {
                             MeasurementUnit.entries.forEach { u ->
                                 DropdownMenuItem(
                                     text = { Text(u.displayName) },

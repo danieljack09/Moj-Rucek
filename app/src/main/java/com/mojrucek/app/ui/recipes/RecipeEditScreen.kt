@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -117,7 +118,7 @@ fun RecipeEditScreen(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         androidx.compose.material3.DropdownMenuItem(
                             text = { Text("Без категорија") },
                             onClick = { viewModel.setCategory(null); expanded = false }
@@ -234,7 +235,7 @@ private fun IngredientLineEditor(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         MeasurementUnit.entries.forEach { u ->
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Text(u.displayName) },
