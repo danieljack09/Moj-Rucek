@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+.kotlin/
+build/
+/local.properties
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+
+# Android Studio / IntelliJ
+.idea/
+
+# Room schema export (regenerated from entities)
+app/schemas/
