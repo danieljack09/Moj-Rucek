@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -73,10 +74,10 @@ fun MojRucekNavHost(container: AppContainer) {
                                 label = {
                                     Text(
                                         item.label,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
                                         maxLines = 1,
                                         softWrap = false,
-                                        overflow = TextOverflow.Visible
+                                        overflow = TextOverflow.Clip
                                     )
                                 },
                                 colors = NavigationBarItemDefaults.colors(

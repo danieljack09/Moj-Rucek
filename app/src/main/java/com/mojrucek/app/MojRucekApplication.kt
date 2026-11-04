@@ -22,7 +22,7 @@ class MojRucekApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
         NotificationHelper.createChannel(this)
-        ExpiryReminderScheduler.schedule(this)
+        ExpiryReminderScheduler.scheduleDailyCheck(this)
 
         applicationScope.launch {
             container.settingsRepository.ensureInitialized()

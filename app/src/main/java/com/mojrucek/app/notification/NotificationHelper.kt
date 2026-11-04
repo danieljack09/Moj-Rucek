@@ -22,23 +22,25 @@ object NotificationHelper {
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            context.getString(R.string.notification_channel_sunday),
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = context.getString(R.string.notification_channel_sunday_desc)
-        }
-        val expiryChannel = NotificationChannel(
-            EXPIRY_CHANNEL_ID,
-            context.getString(R.string.notification_channel_expiry),
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = context.getString(R.string.notification_channel_expiry_desc)
-        }
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager?.createNotificationChannel(channel)
-        manager?.createNotificationChannel(expiryChannel)
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.notification_channel_sunday),
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = context.getString(R.string.notification_channel_sunday_desc)
+            }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                EXPIRY_CHANNEL_ID,
+                context.getString(R.string.notification_channel_expiry),
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = context.getString(R.string.notification_channel_expiry_desc)
+            }
+        )
     }
 
     fun hasPermission(context: Context): Boolean {
@@ -75,9 +77,9 @@ object NotificationHelper {
         androidx.core.app.NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
     }
 
-    /** [lines] are already-formatted entries such as "Млеко – истекува утре". */
-    fun showExpiryReminder(context: Context, lines: List<String>) {
-        if (!hasPermission(context) || lines.isEmpty()) return
+    /** Shows one notification naming ingredients whose expiration date is coming up soon. */
+    fun showExpiringIngredientsReminder(context: Context, ingredientNames: List<String>) {
+        if (!hasPermission(context) || ingredientNames.isEmpty()) return
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -89,14 +91,21 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val style = NotificationCompat.InboxStyle()
-        lines.forEach { style.addLine(it) }
+        val shown = ingredientNames.take(3)
+        val remaining = ingredientNames.size - shown.size
+        val text = if (remaining > 0) {
+            "${shown.joinToString(", ")} и уште $remaining наближуваат кон рокот на траење."
+        } else if (shown.size == 1) {
+            "${shown.first()} наближува кон рокот на траење."
+        } else {
+            "${shown.joinToString(", ")} наближуваат кон рокот на траење."
+        }
 
         val notification = NotificationCompat.Builder(context, EXPIRY_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(android.R.drawable.ic_menu_agenda)
             .setContentTitle(context.getString(R.string.notification_expiry_title))
-            .setContentText(lines.joinToString(", "))
-            .setStyle(style)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
