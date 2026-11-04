@@ -15,14 +15,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -118,16 +116,6 @@ fun HomeScreen(
                 }
             }
 
-            item { InventorySummaryCard(state = state) }
-
-            item {
-                NextWeekCard(
-                    plannedCount = state.nextWeekPlanned,
-                    shoppingGenerated = state.nextWeekShoppingGenerated,
-                    onOpenPlanner = onOpenPlanner
-                )
-            }
-
             if (state.suggestedRecipes.isNotEmpty()) {
                 item {
                     Text(
@@ -187,51 +175,6 @@ private fun TodayLunchCard(today: TodayMealUi?, onChangeClick: () -> Unit, onOpe
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun InventorySummaryCard(state: HomeUiState) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Намирници дома", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
-            Text("${state.ingredientCount} ставки во инвентарот", style = MaterialTheme.typography.bodyMedium)
-            if (state.lowStockIngredients.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.height(18.dp)
-                    )
-                    Spacer(Modifier.height(0.dp))
-                    Text(
-                        "При крај: " + state.lowStockIngredients.joinToString(", ") { it.name },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NextWeekCard(plannedCount: Int, shoppingGenerated: Boolean, onOpenPlanner: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Следна недела", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "$plannedCount од 7 дена испланирани · " +
-                    if (shoppingGenerated) "листата за пазарење е подготвена" else "листата за пазарење сè уште не е генерирана",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(Modifier.height(12.dp))
-            FilledTonalButton(onClick = onOpenPlanner) { Text("Отвори планер") }
         }
     }
 }
