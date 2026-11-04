@@ -1,5 +1,6 @@
 package com.mojrucek.app.ui.navigation
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -10,8 +11,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -67,7 +70,15 @@ fun MojRucekNavHost(container: AppContainer) {
                                     }
                                 },
                                 icon = { Icon(item.icon, contentDescription = item.label) },
-                                label = { Text(item.label) },
+                                label = {
+                                    Text(
+                                        item.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Visible
+                                    )
+                                },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                     selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -121,7 +132,7 @@ fun MojRucekNavHost(container: AppContainer) {
 
             composable(Dest.Ingredients.route) {
                 val vm: IngredientsViewModel = viewModel(factory = GenericViewModelFactory {
-                    IngredientsViewModel(container.ingredientRepository)
+                    IngredientsViewModel(container.ingredientRepository, container.recipeRepository)
                 })
                 IngredientsScreen(vm)
             }

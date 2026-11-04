@@ -61,7 +61,7 @@ fun RecipeDetailScreen(
 
     LaunchedEffect(state.lastAddedToShoppingList) {
         if (state.lastAddedToShoppingList) {
-            snackbarHostState.showSnackbar("Недостасувачките намирници се додадени во листата за пазарење.")
+            snackbarHostState.showSnackbar("Сите намирници што недостасуваат се додадени во листата за пазарење.")
             viewModel.clearAddedFlag()
         }
     }
@@ -157,7 +157,7 @@ fun RecipeDetailScreen(
                             }
                             Spacer()
                             OutlinedButton(onClick = viewModel::addMissingToShoppingList, modifier = Modifier.fillMaxWidth()) {
-                                Text("Додади ги недостасувачките во листа за пазарење")
+                                Text("Додади ги сите намирници што недостасуваат во листата за пазарење")
                             }
                         }
                     }
@@ -165,7 +165,7 @@ fun RecipeDetailScreen(
                 Spacer()
 
                 Button(onClick = { showCookConfirm = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Готвев го ова")
+                    Text("Го зготвив ова")
                 }
                 Spacer()
 

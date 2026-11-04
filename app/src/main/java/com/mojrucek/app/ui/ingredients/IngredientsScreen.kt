@@ -22,7 +22,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
@@ -43,6 +42,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.LaunchedEffect
+import com.mojrucek.app.domain.usecase.IngredientSuggestion
+import com.mojrucek.app.domain.usecase.IngredientSuggestions
+import com.mojrucek.app.domain.usecase.WeekCalculator
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Surface
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
@@ -56,6 +70,7 @@ import com.mojrucek.app.ui.components.formatQuantityWithUnit
 fun IngredientsScreen(viewModel: IngredientsViewModel) {
     val state by viewModel.uiState.collectAsState()
     val pendingDuplicate by viewModel.pendingDuplicate.collectAsState()
+    val knownNames by viewModel.knownNames.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -159,6 +174,7 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     if (showAddDialog) {
         IngredientFormDialog(
             initial = null,
+            knownNames = knownNames,
             onDismiss = { showAddDialog = false },
             onSubmit = { input ->
                 viewModel.submitNewIngredient(input)
@@ -170,6 +186,7 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     editingIngredient?.let { ingredient ->
         IngredientFormDialog(
             initial = ingredient,
+            knownNames = knownNames,
             onDismiss = { editingIngredient = null },
             onSubmit = { input ->
                 viewModel.updateIngredient(
@@ -239,6 +256,14 @@ private fun IngredientRow(
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (ingredient.isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    expirationLabel(ingredient.expirationDateEpochDay)?.let { label ->
+                        val urgent = ingredient.expirationDateEpochDay!! - WeekCalculator.today().toEpochDay() <= EXPIRING_SOON_DAYS
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             IconButton(onClick = onDecrease) { Icon(Icons.Filled.Remove, contentDescription = "Намали") }
@@ -267,6 +292,7 @@ private fun IngredientRow(
 @Composable
 private fun IngredientFormDialog(
     initial: Ingredient?,
+    knownNames: List<String>,
     onDismiss: () -> Unit,
     onSubmit: (NewIngredientInput) -> Unit
 ) {
@@ -276,7 +302,14 @@ private fun IngredientFormDialog(
     var unit by remember { mutableStateOf(initial?.unit ?: MeasurementUnit.PIECE) }
     var lowStockText by remember { mutableStateOf(initial?.lowStockThreshold?.toString() ?: "") }
     var notes by remember { mutableStateOf(initial?.notes ?: "") }
+    var expirationEpochDay by remember { mutableStateOf(initial?.expirationDateEpochDay) }
     var unitMenuExpanded by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    // Hidden right after a pick so the list doesn't reappear for the chosen name.
+    var suggestionsEnabled by remember { mutableStateOf(initial == null) }
+    val suggestions = remember(name, knownNames, suggestionsEnabled) {
+        if (suggestionsEnabled) IngredientSuggestions.suggest(name, knownNames, limit = 5) else emptyList()
+    }
 
     val quantity = quantityText.toDoubleOrNull()
     val isValid = name.isNotBlank() && quantity != null && quantity >= 0.0
@@ -288,11 +321,23 @@ private fun IngredientFormDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = it; suggestionsEnabled = true },
                     label = { Text("Име") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (suggestions.isNotEmpty()) {
+                    SuggestionList(
+                        suggestions = suggestions,
+                        onPick = { suggestion ->
+                            name = suggestion.name
+                            val known = suggestion.category?.let { suggestion } ?: IngredientSuggestions.lookup(suggestion.name)
+                            known?.category?.let { category = it }
+                            known?.unit?.let { unit = it }
+                            suggestionsEnabled = false
+                        }
+                    )
+                }
                 Text("Категорија", style = MaterialTheme.typography.labelLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CategoryEmojiBadge(category = category, size = 32.dp)
@@ -339,6 +384,11 @@ private fun IngredientFormDialog(
                         }
                     }
                 }
+                ExpirationDateField(
+                    epochDay = expirationEpochDay,
+                    onPick = { showDatePicker = true },
+                    onClear = { expirationEpochDay = null }
+                )
                 OutlinedTextField(
                     value = lowStockText,
                     onValueChange = { lowStockText = it },
@@ -364,7 +414,7 @@ private fun IngredientFormDialog(
                             category = category,
                             quantity = quantity ?: 0.0,
                             unit = unit,
-                            expirationDateEpochDay = initial?.expirationDateEpochDay,
+                            expirationDateEpochDay = expirationEpochDay,
                             lowStockThreshold = lowStockText.toDoubleOrNull(),
                             notes = notes.ifBlank { null }
                         )
@@ -376,4 +426,96 @@ private fun IngredientFormDialog(
             TextButton(onClick = onDismiss) { Text("Откажи") }
         }
     )
+
+    if (showDatePicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = (expirationEpochDay ?: WeekCalculator.today().toEpochDay()) * MILLIS_PER_DAY
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { expirationEpochDay = it / MILLIS_PER_DAY }
+                    showDatePicker = false
+                }) { Text("Во ред") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Откажи") }
+            }
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
 }
+
+private const val MILLIS_PER_DAY = 86_400_000L
+
+@Composable
+private fun SuggestionList(suggestions: List<IngredientSuggestion>, onPick: (IngredientSuggestion) -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            suggestions.forEach { suggestion ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(suggestion) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        (suggestion.category ?: IngredientSuggestions.lookup(suggestion.name)?.category)?.emoji ?: "🛒",
+                        modifier = Modifier.padding(end = 10.dp)
+                    )
+                    Text(suggestion.name, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
+private val expirationFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+
+/** Read-only field that opens a date picker on tap; the trailing icon clears the date. */
+@Composable
+private fun ExpirationDateField(epochDay: Long?, onPick: () -> Unit, onClear: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    LaunchedEffect(pressed) { if (pressed) onPick() }
+    OutlinedTextField(
+        value = epochDay?.let { LocalDate.ofEpochDay(it).format(expirationFormatter) } ?: "",
+        onValueChange = {},
+        readOnly = true,
+        label = { Text("Рок на траење (опционално)") },
+        placeholder = { Text("Избери датум") },
+        trailingIcon = {
+            if (epochDay != null) {
+                IconButton(onClick = onClear) { Icon(Icons.Filled.Clear, contentDescription = "Отстрани датум") }
+            } else {
+                Icon(Icons.Filled.Event, contentDescription = null)
+            }
+        },
+        interactionSource = interactionSource,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/** "Истекува за N дена" style label, or null when the item has no date or is far from expiring. */
+private fun expirationLabel(epochDay: Long?): String? {
+    epochDay ?: return null
+    val days = epochDay - WeekCalculator.today().toEpochDay()
+    return when {
+        days < 0 -> "Истечено"
+        days == 0L -> "Истекува денес"
+        days == 1L -> "Истекува утре"
+        days <= EXPIRING_SOON_DAYS -> "Истекува за $days дена"
+        else -> "Рок: ${LocalDate.ofEpochDay(epochDay).format(expirationFormatter)}"
+    }
+}
+
+private const val EXPIRING_SOON_DAYS = 3L

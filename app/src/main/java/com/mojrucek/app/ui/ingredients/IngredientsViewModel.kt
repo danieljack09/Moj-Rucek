@@ -7,6 +7,7 @@ import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.usecase.IngredientMergeUseCase
 import com.mojrucek.app.repository.IngredientRepository
+import com.mojrucek.app.repository.RecipeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +41,16 @@ data class IngredientsUiState(
     val expiringOnly: Boolean = false
 )
 
-class IngredientsViewModel(private val repository: IngredientRepository) : ViewModel() {
+class IngredientsViewModel(
+    private val repository: IngredientRepository,
+    recipeRepository: RecipeRepository
+) : ViewModel() {
+
+    /** Ingredient names from the user's recipes and inventory, offered as autocomplete in the add form. */
+    val knownNames: StateFlow<List<String>> =
+        combine(repository.observeAll(), recipeRepository.observeAllWithIngredients()) { inventory, recipes ->
+            (inventory.map { it.name } + recipes.flatMap { r -> r.ingredients.map { it.name } }).distinct()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val searchQuery = MutableStateFlow("")
     private val categoryFilter = MutableStateFlow<IngredientCategory?>(null)
