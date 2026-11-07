@@ -39,4 +39,12 @@ class Converters {
     fun toStringList(value: String): List<String> =
         if (value.isBlank()) emptyList()
         else json.decodeFromString(stringListSerializer, value)
+
+    @TypeConverter
+    fun fromIntSet(set: Set<Int>): String = set.joinToString(",")
+
+    @TypeConverter
+    fun toIntSet(value: String): Set<Int> =
+        if (value.isBlank()) emptySet()
+        else value.split(",").map { it.trim().toInt() }.toSet()
 }

@@ -12,20 +12,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.mojrucek.app.data.relation.RecipeWithIngredients
 import com.mojrucek.app.domain.model.RecipeMatchResult
 import com.mojrucek.app.domain.model.Readiness
+import com.mojrucek.app.domain.util.MacedonianSearch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -224,14 +231,58 @@ private fun RecipePickerDialog(
     onPick: (Long) -> Unit,
     onClear: () -> Unit
 ) {
+    var query by remember { mutableStateOf("") }
+    val filteredRecipes = remember(recipes, query) {
+        val matches = if (query.isBlank()) {
+            recipes
+        } else {
+            val needle = MacedonianSearch.normalizeForSearch(query.trim())
+            recipes.filter { MacedonianSearch.normalizeForSearch(it.recipe.name).contains(needle) }
+        }
+        matches.sortedByDescending { it.recipe.isFavorite }
+    }
+    val favorites = filteredRecipes.filter { it.recipe.isFavorite }
+    val others = filteredRecipes.filterNot { it.recipe.isFavorite }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Избери рецепт за денес") },
         text = {
-            LazyColumn(modifier = Modifier.height(360.dp)) {
-                items(recipes, key = { it.recipe.id }) { r ->
-                    TextButton(onClick = { onPick(r.recipe.id) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(r.recipe.name, modifier = Modifier.fillMaxWidth())
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Пребарај рецепт") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                if (filteredRecipes.isEmpty()) {
+                    Box(modifier = Modifier.height(360.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text("Нема пронајдени рецепти")
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.height(360.dp)) {
+                        if (favorites.isNotEmpty() && others.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Омилени",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 12.dp, top = 4.dp)
+                                )
+                            }
+                        }
+                        items(favorites, key = { it.recipe.id }) { r ->
+                            RecipePickerRow(r, onPick)
+                        }
+                        if (favorites.isNotEmpty() && others.isNotEmpty()) {
+                            item { HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp)) }
+                        }
+                        items(others, key = { it.recipe.id }) { r ->
+                            RecipePickerRow(r, onPick)
+                        }
                     }
                 }
             }
@@ -243,4 +294,25 @@ private fun RecipePickerDialog(
             TextButton(onClick = onClear) { Text("Испразни ден") }
         }
     )
+}
+
+@Composable
+private fun RecipePickerRow(recipe: RecipeWithIngredients, onPick: (Long) -> Unit) {
+    TextButton(onClick = { onPick(recipe.recipe.id) }, modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (recipe.recipe.isFavorite) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = "Омилен рецепт",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            } else {
+                Spacer(modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(recipe.recipe.name, modifier = Modifier.fillMaxWidth())
+        }
+    }
 }

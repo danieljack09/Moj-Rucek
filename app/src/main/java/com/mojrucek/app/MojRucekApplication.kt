@@ -29,8 +29,8 @@ class MojRucekApplication : Application() {
             container.recipeRepository.seedIfEmpty()
             addNewBuiltInRecipesOnce()
             val settings = container.settingsRepository.getOnce()
-            if (settings.sundayReminderEnabled) {
-                ReminderScheduler.scheduleWeeklyReminder(this@MojRucekApplication, settings)
+            if (settings.reminderEnabled) {
+                ReminderScheduler.scheduleReminder(this@MojRucekApplication, settings)
             }
         }
     }

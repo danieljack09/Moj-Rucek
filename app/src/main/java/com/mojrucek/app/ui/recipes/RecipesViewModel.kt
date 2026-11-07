@@ -6,6 +6,7 @@ import com.mojrucek.app.data.entity.RecipeCategory
 import com.mojrucek.app.data.relation.RecipeWithIngredients
 import com.mojrucek.app.domain.model.Readiness
 import com.mojrucek.app.domain.model.RecipeMatchResult
+import com.mojrucek.app.domain.util.MacedonianSearch
 import com.mojrucek.app.repository.IngredientRepository
 import com.mojrucek.app.repository.RecipeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,8 +59,8 @@ class RecipesViewModel(
         }
 
         if (f.query.isNotBlank()) {
-            val needle = f.query.trim().lowercase()
-            items = items.filter { it.match.recipeName.lowercase().contains(needle) }
+            val needle = MacedonianSearch.normalizeForSearch(f.query.trim())
+            items = items.filter { MacedonianSearch.normalizeForSearch(it.match.recipeName).contains(needle) }
         }
         if (f.category != null) items = items.filter { it.category == f.category }
         if (f.favoritesOnly) items = items.filter { it.match.isFavorite }

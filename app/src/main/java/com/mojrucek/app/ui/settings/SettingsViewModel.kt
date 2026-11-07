@@ -46,18 +46,42 @@ class SettingsViewModel(
 
     fun setReminderEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            settingsRepository.update { it.copy(sundayReminderEnabled = enabled) }
-            val updated = settingsRepository.getOnce()
-            ReminderScheduler.scheduleWeeklyReminder(getApplication<Application>(), updated)
+            settingsRepository.update { it.copy(reminderEnabled = enabled) }
+            rescheduleReminder()
+        }
+    }
+
+    fun setReminderMode(mode: String) {
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(reminderMode = mode) }
+            rescheduleReminder()
+        }
+    }
+
+    fun setReminderWeeklyDay(day: Int) {
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(reminderWeeklyDay = day) }
+            rescheduleReminder()
+        }
+    }
+
+    fun setReminderDays(days: Set<Int>) {
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(reminderDays = days) }
+            rescheduleReminder()
         }
     }
 
     fun setReminderTime(hour: Int, minute: Int) {
         viewModelScope.launch {
-            settingsRepository.update { it.copy(sundayReminderHour = hour, sundayReminderMinute = minute) }
-            val updated = settingsRepository.getOnce()
-            ReminderScheduler.scheduleWeeklyReminder(getApplication<Application>(), updated)
+            settingsRepository.update { it.copy(reminderHour = hour, reminderMinute = minute) }
+            rescheduleReminder()
         }
+    }
+
+    private suspend fun rescheduleReminder() {
+        val updated = settingsRepository.getOnce()
+        ReminderScheduler.scheduleReminder(getApplication<Application>(), updated)
     }
 
     fun validateImport(jsonText: String): ImportResult = backupRepository.validate(jsonText)

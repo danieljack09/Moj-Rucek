@@ -51,7 +51,7 @@ object NotificationHelper {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun showSundayReminder(context: Context) {
+    fun showReminder(context: Context) {
         if (!hasPermission(context)) return
 
         val openIntent = Intent(context, MainActivity::class.java).apply {

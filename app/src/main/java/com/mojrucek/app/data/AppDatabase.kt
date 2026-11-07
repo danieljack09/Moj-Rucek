@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mojrucek.app.data.dao.AppSettingsDao
 import com.mojrucek.app.data.dao.IngredientDao
 import com.mojrucek.app.data.dao.PlannerDao
@@ -28,7 +30,7 @@ import com.mojrucek.app.data.entity.WeeklyPlan
         WeeklyPlan::class,
         AppSettings::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -50,7 +52,43 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "mojrucek.db"
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
+
+        /**
+         * Replaces the old fixed Sunday-only reminder columns with the new
+         * weekly/daily reminder settings, carrying over the user's existing
+         * enabled flag and time so their preference survives the upgrade.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // SQLite can't add a NOT NULL column without a SQL-level DEFAULT, but Room's
+                // schema validator requires the final table to have none (defaults live only
+                // in the Kotlin constructor) — so the table is rebuilt instead of ALTER'd.
+                db.execSQL(
+                    "CREATE TABLE app_settings_new (" +
+                        "id INTEGER NOT NULL, " +
+                        "defaultHouseholdServings INTEGER NOT NULL, " +
+                        "reminderEnabled INTEGER NOT NULL, " +
+                        "reminderMode TEXT NOT NULL, " +
+                        "reminderWeeklyDay INTEGER NOT NULL, " +
+                        "reminderDays TEXT NOT NULL, " +
+                        "reminderHour INTEGER NOT NULL, " +
+                        "reminderMinute INTEGER NOT NULL, " +
+                        "lastShoppingListWeekStartEpochDay INTEGER, " +
+                        "PRIMARY KEY(id))"
+                )
+                db.execSQL(
+                    "INSERT INTO app_settings_new (id, defaultHouseholdServings, reminderEnabled, " +
+                        "reminderMode, reminderWeeklyDay, reminderDays, reminderHour, reminderMinute, " +
+                        "lastShoppingListWeekStartEpochDay) " +
+                        "SELECT id, defaultHouseholdServings, sundayReminderEnabled, 'WEEKLY', 7, '', " +
+                        "sundayReminderHour, sundayReminderMinute, lastShoppingListWeekStartEpochDay " +
+                        "FROM app_settings"
+                )
+                db.execSQL("DROP TABLE app_settings")
+                db.execSQL("ALTER TABLE app_settings_new RENAME TO app_settings")
+            }
+        }
     }
 }

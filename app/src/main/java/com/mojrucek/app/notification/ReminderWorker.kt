@@ -11,13 +11,13 @@ class ReminderWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        NotificationHelper.showSundayReminder(applicationContext)
+        NotificationHelper.showReminder(applicationContext)
 
         val app = applicationContext as? MojRucekApplication
         if (app != null) {
             val settings = app.container.settingsRepository.getOnce()
-            // Reschedule for next Sunday so the reminder keeps recurring.
-            ReminderScheduler.scheduleWeeklyReminder(applicationContext, settings)
+            // Reschedule for the next occurrence so the reminder keeps recurring.
+            ReminderScheduler.scheduleReminder(applicationContext, settings)
         }
 
         return Result.success()

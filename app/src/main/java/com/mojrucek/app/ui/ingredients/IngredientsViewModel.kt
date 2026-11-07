@@ -6,6 +6,7 @@ import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.usecase.IngredientMergeUseCase
+import com.mojrucek.app.domain.util.MacedonianSearch
 import com.mojrucek.app.repository.IngredientRepository
 import com.mojrucek.app.repository.RecipeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,8 +67,8 @@ class IngredientsViewModel(
         val today = com.mojrucek.app.domain.usecase.WeekCalculator.today().toEpochDay()
         var visible = all
         if (f.query.isNotBlank()) {
-            val needle = f.query.trim().lowercase()
-            visible = visible.filter { it.normalizedName.contains(needle) }
+            val needle = MacedonianSearch.normalizeForSearch(f.query.trim())
+            visible = visible.filter { MacedonianSearch.normalizeForSearch(it.name).contains(needle) }
         }
         if (f.category != null) visible = visible.filter { it.category == f.category }
         if (f.lowStockOnly) visible = visible.filter { it.isLowStock }

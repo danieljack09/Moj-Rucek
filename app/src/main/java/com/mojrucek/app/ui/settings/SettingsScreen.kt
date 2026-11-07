@@ -3,12 +3,22 @@ package com.mojrucek.app.ui.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -22,9 +32,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.mojrucek.app.data.entity.AppSettings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,7 +46,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.mojrucek.app.repository.ImportResult
@@ -110,24 +125,62 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
             }
 
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Неделен потсетник (недела)", style = MaterialTheme.typography.titleMedium)
+                        Text("Потсетник за планирање", style = MaterialTheme.typography.titleMedium)
                         Switch(
-                            checked = state.settings.sundayReminderEnabled,
+                            checked = state.settings.reminderEnabled,
                             onCheckedChange = viewModel::setReminderEnabled
                         )
                     }
-                    Text(
-                        "Потсетник во %02d:%02d часот секоја недела да се испланира следната недела.".format(
-                            state.settings.sundayReminderHour, state.settings.sundayReminderMinute
-                        ),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+
+                    if (state.settings.reminderEnabled) {
+                        ReminderModeSelector(
+                            mode = state.settings.reminderMode,
+                            onModeChange = viewModel::setReminderMode
+                        )
+
+                        if (state.settings.reminderMode == AppSettings.ReminderMode.WEEKLY) {
+                            DayCircleRow(
+                                isSelected = { it == state.settings.reminderWeeklyDay },
+                                onToggle = viewModel::setReminderWeeklyDay
+                            )
+                        } else {
+                            DayCircleRow(
+                                isSelected = { it in state.settings.reminderDays },
+                                onToggle = { day ->
+                                    val days = state.settings.reminderDays
+                                    viewModel.setReminderDays(if (day in days) days - day else days + day)
+                                }
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Време на потсетник", style = MaterialTheme.typography.titleSmall)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TimeStepper(
+                                    value = state.settings.reminderHour,
+                                    range = 0..23,
+                                    onValueChange = { viewModel.setReminderTime(it, state.settings.reminderMinute) }
+                                )
+                                Text(":", style = MaterialTheme.typography.titleMedium)
+                                TimeStepper(
+                                    value = state.settings.reminderMinute,
+                                    range = 0..59,
+                                    step = 5,
+                                    onValueChange = { viewModel.setReminderTime(state.settings.reminderHour, it) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -176,5 +229,113 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
             text = { Text(message) },
             confirmButton = { TextButton(onClick = viewModel::clearImportMessage) { Text("Во ред") } }
         )
+    }
+}
+
+private val dayLabels = mapOf(
+    1 to "По", 2 to "Вт", 3 to "Ср", 4 to "Че", 5 to "Пе", 6 to "Са", 7 to "Не"
+)
+
+@Composable
+private fun ReminderModeSelector(mode: String, onModeChange: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
+            .padding(4.dp)
+    ) {
+        ModeSegment(
+            label = "Неделно",
+            selected = mode == AppSettings.ReminderMode.WEEKLY,
+            onClick = { onModeChange(AppSettings.ReminderMode.WEEKLY) },
+            modifier = Modifier.weight(1f)
+        )
+        ModeSegment(
+            label = "Дневно",
+            selected = mode == AppSettings.ReminderMode.DAILY,
+            onClick = { onModeChange(AppSettings.ReminderMode.DAILY) },
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun ModeSegment(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        label = "segmentBackground"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "segmentContent"
+    )
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(backgroundColor)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = contentColor, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+private fun DayCircleRow(isSelected: (Int) -> Boolean, onToggle: (Int) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        dayLabels.forEach { (day, label) ->
+            DayCircle(
+                label = label,
+                selected = isSelected(day),
+                onClick = { onToggle(day) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DayCircle(label: String, selected: Boolean, onClick: () -> Unit) {
+    val scale by animateFloatAsState(targetValue = if (selected) 1.08f else 1f, label = "dayScale")
+    val backgroundColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        label = "dayBackground"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "dayContent"
+    )
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(40.dp).scale(scale),
+        shape = CircleShape,
+        color = backgroundColor,
+        contentColor = contentColor,
+        shadowElevation = if (selected) 4.dp else 0.dp,
+        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable
+private fun TimeStepper(value: Int, range: IntRange, onValueChange: (Int) -> Unit, step: Int = 1) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = {
+            val next = value - step
+            onValueChange(if (next < range.first) range.last else next)
+        }) {
+            Icon(Icons.Filled.Remove, contentDescription = "Намали")
+        }
+        Text("%02d".format(value), style = MaterialTheme.typography.titleMedium)
+        IconButton(onClick = {
+            val next = value + step
+            onValueChange(if (next > range.last) range.first else next)
+        }) {
+            Icon(Icons.Filled.Add, contentDescription = "Зголеми")
+        }
     }
 }
