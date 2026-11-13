@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -28,9 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -44,10 +41,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mojrucek.app.data.relation.RecipeWithIngredients
-import com.mojrucek.app.domain.model.RecipeMatchResult
-import com.mojrucek.app.domain.model.Readiness
 import com.mojrucek.app.domain.util.MacedonianSearch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,8 +65,10 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenRecipe: (Long) -> Unit,
     onOpenPlanner: () -> Unit,
-    onQuickAddIngredient: () -> Unit,
-    onQuickAddShoppingItem: () -> Unit
+    onOpenLowStock: () -> Unit,
+    onOpenShopping: () -> Unit,
+    onOpenNextWeekPlanner: () -> Unit,
+    adBanner: (@Composable () -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
     var showRecipePicker by remember { mutableStateOf(false) }
@@ -107,33 +117,32 @@ fun HomeScreen(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(onClick = onQuickAddIngredient, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.height(18.dp))
-                        Spacer(Modifier.height(0.dp))
-                        Text("Намирница", maxLines = 1)
-                    }
-                    OutlinedButton(onClick = onQuickAddShoppingItem, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.height(18.dp))
-                        Text("За пазарење", maxLines = 1)
-                    }
-                }
+                WeekPreview(
+                    days = state.weekDays,
+                    onOpenRecipe = onOpenRecipe,
+                    onOpenPlanner = onOpenPlanner
+                )
             }
 
-            if (state.suggestedRecipes.isNotEmpty()) {
-                item {
-                    Text(
-                        "Предложени рецепти",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                items(state.suggestedRecipes, key = { it.recipeId }) { match ->
-                    SuggestedRecipeCard(match = match, onClick = { onOpenRecipe(match.recipeId) })
-                }
+            item {
+                KitchenOverview(
+                    lowStockCount = state.lowStockIngredients.size,
+                    shoppingCount = state.unpurchasedShoppingCount,
+                    onOpenLowStock = onOpenLowStock,
+                    onOpenShopping = onOpenShopping
+                )
+            }
+
+            item {
+                WeeklyReminderCard(
+                    nextWeekPlanned = state.nextWeekPlanned,
+                    onClick = onOpenNextWeekPlanner
+                )
+            }
+
+            // Future ad banner: only occupies a list item (and its spacing) when an ad is supplied.
+            if (adBanner != null) {
+                item { AdBannerSlot(content = adBanner) }
             }
         }
     }
@@ -186,40 +195,164 @@ private fun TodayLunchCard(today: TodayMealUi?, onChangeClick: () -> Unit, onOpe
     }
 }
 
+private val shortDayNames = listOf("ПОН", "ВТО", "СРЕ", "ЧЕТ", "ПЕТ", "САБ", "НЕД")
+
 @Composable
-private fun SuggestedRecipeCard(match: RecipeMatchResult, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
-        Column(Modifier.padding(16.dp)) {
+private fun WeekPreview(
+    days: List<WeekDayUi>,
+    onOpenRecipe: (Long) -> Unit,
+    onOpenPlanner: () -> Unit
+) {
+    val sectionBg = Color(0xFFE8E2EB)
+    val plannedBg = Color(0xFFD6E3D2)
+    val emptyBg = Color(0xFFF8F5ED)
+    val todayBg = Color(0xFFDDE6D6)
+    val todayText = Color(0xFF344B3B)
+    val mainText = Color(0xFF35342F)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = sectionBg, contentColor = mainText)
+    ) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Оваа недела", style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(match.recipeName, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    when (match.readiness) {
-                        Readiness.CAN_COOK_NOW -> "Можам да зготвам сега"
-                        Readiness.ALMOST_READY -> "Речиси подготвено"
-                        Readiness.NEEDS_SHOPPING -> "Треба да купам"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = when (match.readiness) {
-                        Readiness.CAN_COOK_NOW -> MaterialTheme.colorScheme.primary
-                        Readiness.ALMOST_READY -> MaterialTheme.colorScheme.secondary
-                        Readiness.NEEDS_SHOPPING -> MaterialTheme.colorScheme.onSurfaceVariant
+                days.forEach { day ->
+                    val meal = day.meal
+                    val bg = when {
+                        day.isToday -> todayBg
+                        meal != null -> plannedBg
+                        else -> emptyBg
                     }
-                )
+                    val textColor = if (day.isToday) todayText else mainText
+                    Card(
+                        onClick = { if (meal != null) onOpenRecipe(meal.recipeId) else onOpenPlanner() },
+                        modifier = Modifier.weight(1f).height(76.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = bg, contentColor = textColor),
+                        border = if (day.isToday) BorderStroke(2.dp, todayText) else null
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                shortDayNames[day.dayOfWeek - 1],
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            if (meal != null) {
+                                Text(
+                                    meal.recipeName,
+                                    fontSize = 9.sp,
+                                    lineHeight = 11.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else {
+                                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                                    Text("+", fontSize = 16.sp, color = textColor.copy(alpha = 0.55f))
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { (match.coveragePercent / 100.0).toFloat() },
-                modifier = Modifier.fillMaxWidth()
+        }
+    }
+}
+
+@Composable
+private fun KitchenOverview(
+    lowStockCount: Int,
+    shoppingCount: Int,
+    onOpenLowStock: () -> Unit,
+    onOpenShopping: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Кујнски преглед", style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OverviewCard(
+                icon = Icons.Filled.Inventory2,
+                count = lowStockCount,
+                label = "Намирници при крај",
+                background = Color(0xFFDDE6D6),
+                textColor = Color(0xFF344B3B),
+                onClick = onOpenLowStock,
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Покриени намирници: ${match.coveredIngredients} од ${match.totalIngredients}",
-                style = MaterialTheme.typography.bodyMedium
+            OverviewCard(
+                icon = Icons.Filled.ShoppingCart,
+                count = shoppingCount,
+                label = "За купување",
+                background = Color(0xFFE8E2EB),
+                textColor = Color(0xFF35342F),
+                onClick = onOpenShopping,
+                modifier = Modifier.weight(1f).fillMaxHeight()
             )
+        }
+    }
+}
+
+@Composable
+private fun WeeklyReminderCard(nextWeekPlanned: Int, onClick: () -> Unit) {
+    val message = when {
+        nextWeekPlanned <= 0 -> "Време е да го испланираш ручекот за следната недела."
+        nextWeekPlanned < 7 -> "Следната недела има испланирани $nextWeekPlanned од 7 ручеци."
+        else -> "Ручекот за следната недела е целосно испланиран."
+    }
+    val action = if (nextWeekPlanned >= 7) "Прегледај ја следната недела →" else "Планирај ја следната недела →"
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF0E5C9), contentColor = Color(0xFF67542F))
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+            Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Неделен потсетник", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(message, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(action, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewCard(
+    icon: ImageVector,
+    count: Int,
+    label: String,
+    background: Color,
+    textColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = background, contentColor = textColor)
+    ) {
+        Column(Modifier.fillMaxSize().padding(14.dp)) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.height(6.dp))
+            Text(count.toString(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

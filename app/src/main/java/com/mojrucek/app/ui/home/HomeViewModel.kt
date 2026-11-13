@@ -11,7 +11,12 @@ import com.mojrucek.app.repository.IngredientRepository
 import com.mojrucek.app.repository.PlannerRepository
 import com.mojrucek.app.repository.RecipeRepository
 import com.mojrucek.app.repository.SettingsRepository
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.mojrucek.app.repository.ShoppingListRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -20,9 +25,14 @@ import kotlinx.coroutines.launch
 
 data class TodayMealUi(val recipeId: Long, val recipeName: String)
 
+/** One day of the Home "Оваа недела" preview. [meal] is null when nothing is planned. */
+data class WeekDayUi(val dayOfWeek: Int, val isToday: Boolean, val meal: TodayMealUi?)
+
 data class HomeUiState(
     val isLoading: Boolean = true,
     val today: TodayMealUi? = null,
+    val weekDays: List<WeekDayUi> = emptyList(),
+    val unpurchasedShoppingCount: Int = 0,
     val ingredientCount: Int = 0,
     val lowStockIngredients: List<Ingredient> = emptyList(),
     val suggestedRecipes: List<RecipeMatchResult> = emptyList(),
@@ -34,22 +44,37 @@ class HomeViewModel(
     private val recipeRepository: RecipeRepository,
     private val ingredientRepository: IngredientRepository,
     private val plannerRepository: PlannerRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val shoppingListRepository: ShoppingListRepository
 ) : ViewModel() {
 
-    private val today = WeekCalculator.today()
-    private val thisWeekStart = WeekCalculator.mondayOf(today)
-    private val nextWeekStart = WeekCalculator.nextWeekMonday(today)
-    private val todayDayOfWeek = today.dayOfWeek.value
+    /** Current date; re-checked every minute so the screen follows midnight and Monday rollovers. */
+    private val todayFlow = flow {
+        while (true) {
+            emit(WeekCalculator.today())
+            delay(60_000)
+        }
+    }.distinctUntilChanged()
 
-    val uiState: StateFlow<HomeUiState> = combine(
-        ingredientRepository.observeAll(),
-        recipeRepository.observeAllWithIngredients(),
-        plannerRepository.observePlanForWeek(thisWeekStart),
-        plannerRepository.observePlanForWeek(nextWeekStart)
-    ) { ingredients, recipes, thisWeekPlan, nextWeekPlan ->
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val uiState: StateFlow<HomeUiState> = todayFlow.flatMapLatest { today ->
+        val thisWeekStart = WeekCalculator.mondayOf(today)
+        val nextWeekStart = WeekCalculator.nextWeekMonday(today)
+        val todayDayOfWeek = today.dayOfWeek.value
+        combine(
+            ingredientRepository.observeAll(),
+            recipeRepository.observeAllWithIngredients(),
+            plannerRepository.observePlanForWeek(thisWeekStart),
+            plannerRepository.observePlanForWeek(nextWeekStart),
+            shoppingListRepository.observeAll()
+        ) { ingredients, recipes, thisWeekPlan, nextWeekPlan, shoppingItems ->
         val todayMeal: PlannedMeal? = thisWeekPlan?.meals?.firstOrNull { it.dayOfWeek == todayDayOfWeek }
         val todayRecipe = todayMeal?.recipeId?.let { id -> recipes.firstOrNull { it.recipe.id == id } }
+        val weekDays = (1..7).map { dow ->
+            val recipe = thisWeekPlan?.meals?.firstOrNull { it.dayOfWeek == dow }?.recipeId
+                ?.let { id -> recipes.firstOrNull { it.recipe.id == id } }
+            WeekDayUi(dow, dow == todayDayOfWeek, recipe?.let { TodayMealUi(it.recipe.id, it.recipe.name) })
+        }
 
         val matches = recipeRepository.matchAll(recipes, ingredients)
         val suggested = matches
@@ -59,12 +84,15 @@ class HomeViewModel(
         HomeUiState(
             isLoading = false,
             today = todayRecipe?.let { TodayMealUi(it.recipe.id, it.recipe.name) },
+            weekDays = weekDays,
+            unpurchasedShoppingCount = shoppingItems.count { !it.isPurchased },
             ingredientCount = ingredients.size,
             lowStockIngredients = ingredients.filter { it.isLowStock },
             suggestedRecipes = suggested,
             nextWeekPlanned = nextWeekPlan?.meals?.count { it.recipeId != null } ?: 0,
             nextWeekShoppingGenerated = nextWeekPlan?.weeklyPlan?.shoppingListGenerated ?: false
         )
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), HomeUiState())
 
     fun recipesForPicker(onResult: (List<RecipeWithIngredients>) -> Unit) {
@@ -76,8 +104,9 @@ class HomeViewModel(
     fun setTodayMeal(recipeId: Long?) {
         viewModelScope.launch {
             val defaultServings = settingsRepository.getOnce().defaultHouseholdServings
-            val plan = plannerRepository.getOrCreatePlan(thisWeekStart, defaultServings)
-            plannerRepository.setMeal(plan.weeklyPlan.id, todayDayOfWeek, recipeId)
+            val today = WeekCalculator.today()
+            val plan = plannerRepository.getOrCreatePlan(WeekCalculator.mondayOf(today), defaultServings)
+            plannerRepository.setMeal(plan.weeklyPlan.id, today.dayOfWeek.value, recipeId)
         }
     }
 }

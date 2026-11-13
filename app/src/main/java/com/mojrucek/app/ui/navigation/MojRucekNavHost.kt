@@ -11,7 +11,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +51,8 @@ import com.mojrucek.app.ui.shopping.ShoppingViewModel
 @Composable
 fun MojRucekNavHost(container: AppContainer) {
     val navController = rememberNavController()
+    var showLowStockOnly by remember { mutableStateOf(false) }
+    var showNextWeekInPlanner by remember { mutableStateOf(false) }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = bottomNavItems.any { it.dest.route == currentRoute }
@@ -101,7 +107,7 @@ fun MojRucekNavHost(container: AppContainer) {
         ) {
             composable(Dest.Home.route) {
                 val vm: HomeViewModel = viewModel(factory = GenericViewModelFactory {
-                    HomeViewModel(container.recipeRepository, container.ingredientRepository, container.plannerRepository, container.settingsRepository)
+                    HomeViewModel(container.recipeRepository, container.ingredientRepository, container.plannerRepository, container.settingsRepository, container.shoppingListRepository)
                 })
                 HomeScreen(
                     viewModel = vm,
@@ -114,15 +120,24 @@ fun MojRucekNavHost(container: AppContainer) {
                             restoreState = true
                         }
                     },
-                    onQuickAddIngredient = {
+                    onOpenLowStock = {
+                        showLowStockOnly = true
                         navController.navigate(Dest.Ingredients.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
                         }
                     },
-                    onQuickAddShoppingItem = {
+                    onOpenShopping = {
                         navController.navigate(Dest.Shopping.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onOpenNextWeekPlanner = {
+                        showNextWeekInPlanner = true
+                        navController.navigate(Dest.Planner.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
@@ -135,6 +150,13 @@ fun MojRucekNavHost(container: AppContainer) {
                 val vm: IngredientsViewModel = viewModel(factory = GenericViewModelFactory {
                     IngredientsViewModel(container.ingredientRepository, container.recipeRepository)
                 })
+                // One-shot: set when arriving from the Home "Намирници при крај" card.
+                LaunchedEffect(showLowStockOnly) {
+                    if (showLowStockOnly) {
+                        vm.setLowStockOnly(true)
+                        showLowStockOnly = false
+                    }
+                }
                 IngredientsScreen(vm)
             }
 
@@ -153,6 +175,15 @@ fun MojRucekNavHost(container: AppContainer) {
                 val vm: PlannerViewModel = viewModel(factory = GenericViewModelFactory {
                     PlannerViewModel(container.plannerRepository, container.recipeRepository, container.ingredientRepository, container.settingsRepository)
                 })
+                // One-shot: set when arriving from the Home "Неделен потсетник" card.
+                // Reuses the Planner's own week navigation: this week, then +1 = upcoming week.
+                LaunchedEffect(showNextWeekInPlanner) {
+                    if (showNextWeekInPlanner) {
+                        vm.goToThisWeek()
+                        vm.goToNextWeek()
+                        showNextWeekInPlanner = false
+                    }
+                }
                 PlannerScreen(
                     viewModel = vm,
                     onOpenRecipe = { id -> navController.navigate(Dest.RecipeDetail.path(id)) }
