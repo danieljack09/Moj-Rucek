@@ -1,0 +1,13 @@
+{
+  "name": "moj-rucek-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Catalog API and admin panel for the Moj Rucek app (ingredients and recipes).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

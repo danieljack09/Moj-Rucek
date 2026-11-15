@@ -1,0 +1,23 @@
+[Unit]
+Description=Moj Rucek catalog API and admin panel
+After=network.target
+
+[Service]
+Type=simple
+User=rucek
+Group=rucek
+WorkingDirectory=/opt/rucek-server
+EnvironmentFile=/etc/rucek-server.env
+ExecStart=/usr/bin/node /opt/rucek-server/server.js
+Restart=on-failure
+RestartSec=3
+
+# Hardening: only the data folder is writable.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/rucek-server/data
+
+[Install]
+WantedBy=multi-user.target

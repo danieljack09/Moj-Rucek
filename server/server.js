@@ -1,0 +1,238 @@
+'use strict';
+
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const store = require('./db');
+const { HttpError } = store;
+const { INGREDIENT_CATEGORIES, RECIPE_CATEGORIES, UNITS } = require('./constants');
+
+const PORT = Number(process.env.PORT || 3100);
+const HOST = process.env.HOST || '127.0.0.1';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 10) {
+  console.error('ADMIN_PASSWORD must be set (at least 10 characters).');
+  process.exit(1);
+}
+const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const COOKIE = 'rucek_admin';
+
+const ADMIN_HTML = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'));
+
+// ---------- auth ----------
+
+const sha = (s) => crypto.createHash('sha256').update(s).digest();
+const hmac = (s) => crypto.createHmac('sha256', SECRET).update(s).digest('base64url');
+
+function passwordOk(candidate) {
+  return crypto.timingSafeEqual(sha(String(candidate)), sha(ADMIN_PASSWORD));
+}
+
+function makeToken() {
+  const exp = String(Date.now() + SESSION_TTL_MS);
+  return `${exp}.${hmac(exp)}`;
+}
+
+function tokenOk(token) {
+  if (!token) return false;
+  const [exp, sig] = token.split('.');
+  if (!exp || !sig) return false;
+  const expected = hmac(exp);
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+  return Number(exp) > Date.now();
+}
+
+function readCookie(req, name) {
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return null;
+}
+
+const isAuthed = (req) => tokenOk(readCookie(req, COOKIE));
+
+// 5 failed logins per 15 minutes per client address.
+const attempts = new Map();
+function clientIp(req) {
+  return req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown';
+}
+function loginBlocked(ip) {
+  const a = attempts.get(ip);
+  if (!a || a.resetAt < Date.now()) return false;
+  return a.count >= 5;
+}
+function loginFailed(ip) {
+  const a = attempts.get(ip);
+  if (!a || a.resetAt < Date.now()) attempts.set(ip, { count: 1, resetAt: Date.now() + 15 * 60 * 1000 });
+  else a.count++;
+}
+
+// ---------- http helpers ----------
+
+function send(res, status, body, headers = {}) {
+  const isJson = typeof body === 'object' && !Buffer.isBuffer(body);
+  const payload = isJson ? JSON.stringify(body) : body;
+  res.writeHead(status, {
+    'Content-Type': isJson ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+    ...headers,
+  });
+  res.end(payload);
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > 1_000_000) {
+        reject(new HttpError(413, 'Преголемо барање.'));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+      } catch {
+        reject(new HttpError(400, 'Невалиден JSON.'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+// ---------- validation ----------
+
+const bad = (msg) => new HttpError(400, msg);
+const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const optStr = (v, max) => str(v, max) || null;
+const int = (v, min, max, label) => {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < min || n > max) throw bad(`${label}: невалидна вредност.`);
+  return n;
+};
+
+function validateIngredient(b) {
+  const name = str(b.name, 100);
+  if (!name) throw bad('Името е задолжително.');
+  if (!(b.category in INGREDIENT_CATEGORIES)) throw bad('Невалидна категорија.');
+  if (!(b.defaultUnit in UNITS)) throw bad('Невалидна единица.');
+  return { name, category: b.category, defaultUnit: b.defaultUnit };
+}
+
+function validateRecipe(b) {
+  const name = str(b.name, 150);
+  if (!name) throw bad('Името е задолжително.');
+  if (b.category != null && b.category !== '' && !(b.category in RECIPE_CATEGORIES)) throw bad('Невалидна категорија.');
+  const lines = Array.isArray(b.ingredients) ? b.ingredients : [];
+  if (lines.length === 0) throw bad('Додади барем една состојка.');
+  if (lines.length > 100) throw bad('Премногу состојки.');
+  const ingredients = lines.map((l, i) => {
+    const lname = str(l.name, 100);
+    const qty = Number(l.quantity);
+    if (!lname) throw bad(`Состојка ${i + 1}: недостасува име.`);
+    if (!Number.isFinite(qty) || qty < 0 || qty > 1_000_000) throw bad(`Состојка ${i + 1}: невалидна количина.`);
+    if (!(l.unit in UNITS)) throw bad(`Состојка ${i + 1}: невалидна единица.`);
+    return { name: lname, quantity: qty, unit: l.unit, notes: optStr(l.notes, 200) };
+  });
+  const list = (v, max, maxLen) =>
+    (Array.isArray(v) ? v : []).map((s) => str(s, maxLen)).filter(Boolean).slice(0, max);
+  return {
+    name,
+    description: optStr(b.description, 1000),
+    servings: int(b.servings ?? 3, 1, 100, 'Порции'),
+    prepTimeMinutes: int(b.prepTimeMinutes ?? 0, 0, 10000, 'Време за подготовка'),
+    cookTimeMinutes: int(b.cookTimeMinutes ?? 0, 0, 10000, 'Време за готвење'),
+    category: b.category || null,
+    tags: list(b.tags, 20, 40),
+    instructionSteps: list(b.instructionSteps, 60, 1000),
+    notes: optStr(b.notes, 1000),
+    ingredients,
+  };
+}
+
+// ---------- routing ----------
+
+async function handle(req, res) {
+  const url = new URL(req.url, 'http://localhost');
+  const p = url.pathname.replace(/\/+$/, '') || '/';
+  const m = req.method;
+
+  if (p === '/health') return send(res, 200, { ok: true });
+
+  // Public, read-only: what the Android app syncs.
+  if (p === '/api/catalog' && m === 'GET') {
+    const since = Math.max(0, Number(url.searchParams.get('since')) || 0);
+    return send(res, 200, store.catalogSince(since));
+  }
+
+  if (p === '/admin' && m === 'GET') {
+    return send(res, 200, ADMIN_HTML, {
+      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+    });
+  }
+
+  if (p === '/admin/api/login' && m === 'POST') {
+    const ip = clientIp(req);
+    if (loginBlocked(ip)) throw new HttpError(429, 'Премногу обиди. Обиди се повторно подоцна.');
+    const body = await readJson(req);
+    if (!passwordOk(body.password ?? '')) {
+      loginFailed(ip);
+      throw new HttpError(401, 'Погрешна лозинка.');
+    }
+    const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+    return send(res, 200, { ok: true }, {
+      'Set-Cookie': `${COOKIE}=${makeToken()}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=${SESSION_TTL_MS / 1000}${secure}`,
+    });
+  }
+
+  if (p === '/admin/api/logout' && m === 'POST') {
+    return send(res, 200, { ok: true }, { 'Set-Cookie': `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=0` });
+  }
+
+  if (p.startsWith('/admin/api/')) {
+    if (!isAuthed(req)) throw new HttpError(401, 'Не си најавен.');
+    const parts = p.slice('/admin/api/'.length).split('/');
+    const [resource, idRaw] = parts;
+    const id = idRaw === undefined ? null : Number(idRaw);
+    if (idRaw !== undefined && !Number.isInteger(id)) throw new HttpError(404, 'Не е пронајдено.');
+
+    if (resource === 'meta' && m === 'GET') {
+      return send(res, 200, { ingredientCategories: INGREDIENT_CATEGORIES, recipeCategories: RECIPE_CATEGORIES, units: UNITS });
+    }
+
+    if (resource === 'ingredients') {
+      if (id === null && m === 'GET') return send(res, 200, store.listIngredients());
+      if (id === null && m === 'POST') return send(res, 201, store.saveIngredient(null, validateIngredient(await readJson(req))));
+      if (id !== null && m === 'PUT') return send(res, 200, store.saveIngredient(id, validateIngredient(await readJson(req))));
+      if (id !== null && m === 'DELETE') { store.deleteIngredient(id); return send(res, 200, { ok: true }); }
+    }
+
+    if (resource === 'recipes') {
+      if (id === null && m === 'GET') return send(res, 200, store.listRecipes());
+      if (id === null && m === 'POST') return send(res, 201, store.saveRecipe(null, validateRecipe(await readJson(req))));
+      if (id !== null && m === 'GET') return send(res, 200, store.getRecipe(id));
+      if (id !== null && m === 'PUT') return send(res, 200, store.saveRecipe(id, validateRecipe(await readJson(req))));
+      if (id !== null && m === 'DELETE') { store.deleteRecipe(id); return send(res, 200, { ok: true }); }
+    }
+  }
+
+  throw new HttpError(404, 'Не е пронајдено.');
+}
+
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    if (err instanceof HttpError) return send(res, err.status, { error: err.message });
+    console.error(err);
+    send(res, 500, { error: 'Грешка на серверот.' });
+  });
+});
+
+server.listen(PORT, HOST, () => console.log(`Moj Rucek catalog server on http://${HOST}:${PORT}`));
