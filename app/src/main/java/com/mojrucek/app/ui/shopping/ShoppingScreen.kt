@@ -1,23 +1,34 @@
 package com.mojrucek.app.ui.shopping
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.data.entity.ShoppingListItem
@@ -48,7 +60,6 @@ import com.mojrucek.app.ui.components.formatQuantityWithUnit
 fun ShoppingScreen(viewModel: ShoppingViewModel) {
     val state by viewModel.uiState.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
-    var resolvingPurchasedItem by remember { mutableStateOf<ShoppingListItem?>(null) }
 
     Scaffold(
         topBar = {
@@ -80,6 +91,21 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (state.unpurchasedByCategory.isNotEmpty() || state.purchased.isNotEmpty()) {
+                item(key = "select_all") {
+                    FilledTonalButton(
+                        onClick = viewModel::toggleSelectAll,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        Text(if (state.allSelected) "Деселектирај ги сите" else "Селектирај ги сите")
+                    }
+                }
+            }
+
             state.unpurchasedByCategory.forEach { (category, items) ->
                 item(key = "header_${category.name}") {
                     Text(category.displayName, style = MaterialTheme.typography.titleMedium)
@@ -87,9 +113,14 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
                 items(items, key = { it.id }) { item ->
                     ShoppingRow(
                         item = item,
-                        onToggle = {
+                        onToggle = { viewModel.togglePurchased(item) },
+                        onMarkWithInventory = {
                             viewModel.togglePurchased(item)
-                            if (!item.isPurchased) resolvingPurchasedItem = item.copy(isPurchased = true)
+                            viewModel.addToInventory(item.copy(isPurchased = true))
+                        },
+                        onMarkWithoutInventory = {
+                            viewModel.togglePurchased(item)
+                            viewModel.keepWithoutAdding(item.copy(isPurchased = true))
                         },
                         onDelete = { viewModel.delete(item) }
                     )
@@ -104,6 +135,8 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
                     ShoppingRow(
                         item = item,
                         onToggle = { viewModel.togglePurchased(item) },
+                        onMarkWithInventory = { viewModel.addToInventory(item) },
+                        onMarkWithoutInventory = { viewModel.keepWithoutAdding(item) },
                         onDelete = { viewModel.delete(item) }
                     )
                 }
@@ -120,39 +153,27 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
             }
         )
     }
-
-    resolvingPurchasedItem?.let { item ->
-        AlertDialog(
-            onDismissRequest = { resolvingPurchasedItem = null },
-            title = { Text("Купено: ${item.name}") },
-            text = { Text("Да ја додадам во домашните намирници?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.addToInventory(item)
-                    resolvingPurchasedItem = null
-                }) { Text("Додади во домашни намирници") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    viewModel.keepWithoutAdding(item)
-                    resolvingPurchasedItem = null
-                }) { Text("Не, купено е за веднаш") }
-            }
-        )
-    }
 }
 
 @Composable
-private fun ShoppingRow(item: ShoppingListItem, onToggle: () -> Unit, onDelete: () -> Unit) {
+private fun ShoppingRow(
+    item: ShoppingListItem,
+    onToggle: () -> Unit,
+    onMarkWithInventory: () -> Unit,
+    onMarkWithoutInventory: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                Checkbox(checked = item.isPurchased, onCheckedChange = { onToggle() })
-                Column {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (item.isPurchased) {
+                    Checkbox(checked = true, onCheckedChange = { onToggle() })
+                }
+                Column(modifier = Modifier.weight(1f)) {
                     Text(item.name, style = MaterialTheme.typography.bodyLarge)
                     Text(
                         formatQuantityWithUnit(item.quantity, item.unit),
@@ -160,9 +181,83 @@ private fun ShoppingRow(item: ShoppingListItem, onToggle: () -> Unit, onDelete: 
                     )
                 }
             }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Избриши") }
+            PurchaseActionBar(
+                onAddToInventory = onMarkWithInventory,
+                onForNow = onMarkWithoutInventory,
+                onDelete = onDelete
+            )
         }
     }
+}
+
+@Composable
+private fun PurchaseActionBar(
+    onAddToInventory: () -> Unit,
+    onForNow: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(MaterialTheme.shapes.medium)
+    ) {
+        ActionSegment(
+            icon = Icons.Filled.Home,
+            background = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            contentDescription = "Во инвентар",
+            onClick = onAddToInventory,
+            modifier = Modifier.weight(0.5f).fillMaxHeight()
+        )
+        ActionSegmentDivider()
+        ActionSegment(
+            icon = Icons.Filled.Schedule,
+            background = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            contentDescription = "За сега",
+            onClick = onForNow,
+            modifier = Modifier.weight(0.3f).fillMaxHeight()
+        )
+        ActionSegmentDivider()
+        ActionSegment(
+            icon = Icons.Filled.Delete,
+            background = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            contentDescription = "Избриши",
+            onClick = onDelete,
+            modifier = Modifier.weight(0.2f).fillMaxHeight()
+        )
+    }
+}
+
+@Composable
+private fun ActionSegment(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    background: androidx.compose.ui.graphics.Color,
+    contentColor: androidx.compose.ui.graphics.Color,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = contentColor, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun ActionSegmentDivider() {
+    Box(
+        modifier = Modifier
+            .width(1.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.outline)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

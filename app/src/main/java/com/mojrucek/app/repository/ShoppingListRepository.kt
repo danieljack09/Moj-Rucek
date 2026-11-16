@@ -123,6 +123,8 @@ class ShoppingListRepository(
 
     suspend fun clearPurchased() = dao.clearPurchased()
 
+    suspend fun setAllPurchased(purchased: Boolean) = dao.setAllPurchased(purchased)
+
     suspend fun getAllOnce(): List<ShoppingListItem> = dao.getAllOnce()
 
     suspend fun clearAll() = dao.deleteAll()

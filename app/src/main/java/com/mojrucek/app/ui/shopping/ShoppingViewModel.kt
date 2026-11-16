@@ -16,7 +16,13 @@ data class ShoppingUiState(
     val isLoading: Boolean = true,
     val unpurchasedByCategory: Map<IngredientCategory, List<ShoppingListItem>> = emptyMap(),
     val purchased: List<ShoppingListItem> = emptyList()
-)
+) {
+    val allSelected: Boolean
+        get() {
+            val totalCount = unpurchasedByCategory.values.sumOf { it.size } + purchased.size
+            return totalCount > 0 && unpurchasedByCategory.isEmpty()
+        }
+}
 
 class ShoppingViewModel(private val repository: ShoppingListRepository) : ViewModel() {
 
@@ -52,5 +58,10 @@ class ShoppingViewModel(private val repository: ShoppingListRepository) : ViewMo
 
     fun clearPurchased() {
         viewModelScope.launch { repository.clearPurchased() }
+    }
+
+    fun toggleSelectAll() {
+        val target = !uiState.value.allSelected
+        viewModelScope.launch { repository.setAllPurchased(target) }
     }
 }
