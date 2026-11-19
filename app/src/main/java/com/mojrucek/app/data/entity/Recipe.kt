@@ -22,7 +22,9 @@ data class Recipe(
     val imageUri: String? = null,
     val isFavorite: Boolean = false,
     val isUserCreated: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** Id of this recipe on the admin server; null for recipes that exist only on this device. */
+    val serverId: Long? = null
 ) {
     val totalTimeMinutes: Int get() = prepTimeMinutes + cookTimeMinutes
 }

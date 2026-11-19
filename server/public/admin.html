@@ -159,10 +159,18 @@ const select = (options, value, attrs = {}) =>
 
 // ---------- ingredients ----------
 
+// Cyrillic/Latin-insensitive matching, so "pip" finds "пипер" and "sirenje"/"sirene" find "сирење".
+const CYR = { а:'a',б:'b',в:'v',г:'g',д:'d',ѓ:'g',е:'e',ж:'z',з:'z',ѕ:'dz',и:'i',ј:'j',к:'k',л:'l',љ:'l',м:'m',н:'n',њ:'n',
+  о:'o',п:'p',р:'r',с:'s',т:'t',ќ:'k',у:'u',ф:'f',х:'h',ц:'c',ч:'c',џ:'dz',ш:'s' };
+const norm = (s) => [...s.trim().toLowerCase()].map((c) => CYR[c] ?? c).join('')
+  .replace(/[čć]/g, 'c').replace(/š/g, 's').replace(/ž/g, 'z').replace(/đ/g, 'd');
+const matches = (name, q) => { const n = norm(name), k = norm(q); return k && (n.includes(k) || (n.length >= 3 && k.includes(n))); };
+
+let catFilter = '';
+
 function renderIngredients(editing = null, filter = '') {
   const view = $('#view');
-  const q = filter.trim().toLowerCase();
-  const shown = ingredients.filter((i) => !q || i.name.toLowerCase().includes(q));
+  const shown = ingredients.filter((i) => (!filter.trim() || matches(i.name, filter)) && (!catFilter || i.category === catFilter));
 
   const form = h('form', { class: 'card', onsubmit: async (e) => {
     e.preventDefault();
@@ -177,7 +185,14 @@ function renderIngredients(editing = null, filter = '') {
   } },
     h('strong', {}, editing ? 'Уреди намирница' : 'Нова намирница'),
     h('div', { class: 'row' },
-      h('div', {}, h('label', {}, 'Име'), h('input', { name: 'name', required: true, maxlength: 100, value: editing?.name ?? '' })),
+      h('div', {}, h('label', {}, 'Име'), h('input', { name: 'name', required: true, maxlength: 100, value: editing?.name ?? '', autocomplete: 'off', oninput: (e) => {
+        const similar = e.target.value.trim()
+          ? ingredients.filter((i) => i.id !== editing?.id && matches(i.name, e.target.value)).slice(0, 8) : [];
+        const hint = $('#similar');
+        hint.hidden = !similar.length;
+        hint.textContent = similar.length
+          ? 'Веќе постојат слични: ' + similar.map((i) => `${i.name} (${meta.units[i.defaultUnit] ?? i.defaultUnit})`).join(', ') : '';
+      } }), h('div', { id: 'similar', class: 'msg err', hidden: true, style: 'margin:6px 0 0' })),
       h('div', {}, h('label', {}, 'Категорија'), select(meta.ingredientCategories, editing?.category ?? 'DRUGO', { name: 'category' })),
       h('div', {}, h('label', {}, 'Единица'), select(meta.units, editing?.defaultUnit ?? 'PIECE', { name: 'defaultUnit' }))),
     h('p', {}, h('button', { class: 'primary', type: 'submit' }, 'Зачувај'), ' ',
@@ -191,7 +206,10 @@ function renderIngredients(editing = null, filter = '') {
 
   view.replaceChildren(form,
     h('div', { class: 'card' },
-      h('div', { class: 'toolbar' }, search, h('span', { class: 'muted' }, `${shown.length} / ${ingredients.length}`)),
+      h('div', { class: 'toolbar' }, search,
+        select({ '': 'Сите категории', ...meta.ingredientCategories }, catFilter,
+          { style: 'flex:0 0 200px; width:200px', onchange: (e) => { catFilter = e.target.value; renderIngredients(editing, filter); } }),
+        h('span', { class: 'muted' }, `${shown.length} / ${ingredients.length}`)),
       h('table', {},
         h('tr', {}, h('th', {}, 'Име'), h('th', {}, 'Категорија'), h('th', {}, 'Единица'), h('th')),
         shown.map((i) => h('tr', {},

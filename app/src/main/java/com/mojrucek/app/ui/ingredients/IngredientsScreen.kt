@@ -71,6 +71,7 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     val state by viewModel.uiState.collectAsState()
     val pendingDuplicate by viewModel.pendingDuplicate.collectAsState()
     val knownNames by viewModel.knownNames.collectAsState()
+    val suggestionSource by viewModel.suggestionSource.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -175,6 +176,7 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
         IngredientFormDialog(
             initial = null,
             knownNames = knownNames,
+            suggestionSource = suggestionSource,
             onDismiss = { showAddDialog = false },
             onSubmit = { input ->
                 viewModel.submitNewIngredient(input)
@@ -187,6 +189,7 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
         IngredientFormDialog(
             initial = ingredient,
             knownNames = knownNames,
+            suggestionSource = suggestionSource,
             onDismiss = { editingIngredient = null },
             onSubmit = { input ->
                 viewModel.updateIngredient(
@@ -293,6 +296,7 @@ private fun IngredientRow(
 private fun IngredientFormDialog(
     initial: Ingredient?,
     knownNames: List<String>,
+    suggestionSource: List<IngredientSuggestion>,
     onDismiss: () -> Unit,
     onSubmit: (NewIngredientInput) -> Unit
 ) {
@@ -307,8 +311,8 @@ private fun IngredientFormDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     // Hidden right after a pick so the list doesn't reappear for the chosen name.
     var suggestionsEnabled by remember { mutableStateOf(initial == null) }
-    val suggestions = remember(name, knownNames, suggestionsEnabled) {
-        if (suggestionsEnabled) IngredientSuggestions.suggest(name, knownNames, limit = 5) else emptyList()
+    val suggestions = remember(name, knownNames, suggestionSource, suggestionsEnabled) {
+        if (suggestionsEnabled) IngredientSuggestions.suggest(name, knownNames, limit = 5, source = suggestionSource) else emptyList()
     }
 
     val quantity = quantityText.toDoubleOrNull()
@@ -329,9 +333,10 @@ private fun IngredientFormDialog(
                 if (suggestions.isNotEmpty()) {
                     SuggestionList(
                         suggestions = suggestions,
+                        source = suggestionSource,
                         onPick = { suggestion ->
                             name = suggestion.name
-                            val known = suggestion.category?.let { suggestion } ?: IngredientSuggestions.lookup(suggestion.name)
+                            val known = suggestion.category?.let { suggestion } ?: IngredientSuggestions.lookup(suggestion.name, suggestionSource)
                             known?.category?.let { category = it }
                             known?.unit?.let { unit = it }
                             suggestionsEnabled = false
@@ -451,7 +456,11 @@ private fun IngredientFormDialog(
 private const val MILLIS_PER_DAY = 86_400_000L
 
 @Composable
-private fun SuggestionList(suggestions: List<IngredientSuggestion>, onPick: (IngredientSuggestion) -> Unit) {
+private fun SuggestionList(
+    suggestions: List<IngredientSuggestion>,
+    source: List<IngredientSuggestion>,
+    onPick: (IngredientSuggestion) -> Unit
+) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
@@ -468,7 +477,7 @@ private fun SuggestionList(suggestions: List<IngredientSuggestion>, onPick: (Ing
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
                     Text(
-                        (suggestion.category ?: IngredientSuggestions.lookup(suggestion.name)?.category)?.emoji ?: "🛒",
+                        (suggestion.category ?: IngredientSuggestions.lookup(suggestion.name, source)?.category)?.emoji ?: "🛒",
                         modifier = Modifier.padding(end = 10.dp)
                     )
                     Text(suggestion.name, style = MaterialTheme.typography.bodyLarge)

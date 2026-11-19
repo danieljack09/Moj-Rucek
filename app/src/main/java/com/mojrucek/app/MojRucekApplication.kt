@@ -1,7 +1,6 @@
 package com.mojrucek.app
 
 import android.app.Application
-import com.mojrucek.app.data.seed.SampleRecipes
 import com.mojrucek.app.di.AppContainer
 import com.mojrucek.app.notification.ExpiryReminderScheduler
 import com.mojrucek.app.notification.NotificationHelper
@@ -26,25 +25,14 @@ class MojRucekApplication : Application() {
 
         applicationScope.launch {
             container.settingsRepository.ensureInitialized()
-            container.recipeRepository.seedIfEmpty()
-            addNewBuiltInRecipesOnce()
+            // Recipes come only from the server now; drop the sample recipes older
+            // versions of the app built in. The user's own recipes are kept.
+            container.recipeRepository.deleteLegacyBuiltIn()
+            container.catalogSyncRepository.sync()
             val settings = container.settingsRepository.getOnce()
             if (settings.reminderEnabled) {
                 ReminderScheduler.scheduleReminder(this@MojRucekApplication, settings)
             }
         }
-    }
-
-    /** Existing installs get recipes added in later versions exactly once, so deleted ones stay deleted. */
-    private suspend fun addNewBuiltInRecipesOnce() {
-        val prefs = getSharedPreferences("seed", MODE_PRIVATE)
-        if (prefs.getInt(KEY_RECIPE_SEED_VERSION, 1) >= RECIPE_SEED_VERSION) return
-        container.recipeRepository.seedMissing(SampleRecipes.mealTimeRecipes)
-        prefs.edit().putInt(KEY_RECIPE_SEED_VERSION, RECIPE_SEED_VERSION).apply()
-    }
-
-    private companion object {
-        const val KEY_RECIPE_SEED_VERSION = "recipe_seed_version"
-        const val RECIPE_SEED_VERSION = 2
     }
 }

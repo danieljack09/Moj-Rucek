@@ -186,6 +186,23 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
 
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Каталог", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Листата на намирници и рецептите се преземаат од серверот. Синхронизирај за да ги добиеш најновите промени.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedButton(
+                        onClick = viewModel::syncCatalog,
+                        enabled = !state.isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (state.isSyncing) "Се синхронизира…" else "Синхронизирај")
+                    }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Резервна копија", style = MaterialTheme.typography.titleMedium)
                     Text(
                         "Извези ги сите намирници, рецепти, планови и листи во JSON датотека, или вчитај претходно извезена датотека.",
@@ -219,6 +236,15 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
             dismissButton = {
                 TextButton(onClick = { pendingImportSummary = null; pendingImportText = null }) { Text("Откажи") }
             }
+        )
+    }
+
+    state.syncMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearSyncMessage,
+            title = { Text("Синхронизација") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::clearSyncMessage) { Text("Во ред") } }
         )
     }
 

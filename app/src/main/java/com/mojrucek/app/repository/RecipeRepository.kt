@@ -5,8 +5,6 @@ import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.Recipe
 import com.mojrucek.app.data.entity.RecipeIngredient
 import com.mojrucek.app.data.relation.RecipeWithIngredients
-import com.mojrucek.app.data.seed.SampleRecipes
-import com.mojrucek.app.data.seed.SeedRecipe
 import com.mojrucek.app.domain.model.IngredientLine
 import com.mojrucek.app.domain.model.RecipeMatchResult
 import com.mojrucek.app.domain.usecase.RecipeMatchingUseCase
@@ -48,7 +46,10 @@ class RecipeRepository(private val dao: RecipeDao) {
             id = 0,
             name = "${source.recipe.name} (копија)",
             isFavorite = false,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            // The copy is the user's own: a sync must never overwrite or delete it.
+            isUserCreated = true,
+            serverId = null
         )
         val copiedIngredients = source.ingredients.map { it.copy(id = 0, recipeId = 0) }
         return upsert(copy, copiedIngredients)
@@ -94,42 +95,7 @@ class RecipeRepository(private val dao: RecipeDao) {
         recipes.forEach { upsert(it.recipe.copy(id = 0), it.ingredients.map { ri -> ri.copy(id = 0, recipeId = 0) }) }
     }
 
-    /** Populates the database with the built-in Macedonian sample recipes, only if it's currently empty. */
-    suspend fun seedIfEmpty() {
-        if (dao.count() > 0) return
-        (SampleRecipes.all + SampleRecipes.mealTimeRecipes).forEach { insertSeed(it) }
-    }
+    /** Deletes the sample recipes older app versions shipped with (built in, never synced from the server). */
+    suspend fun deleteLegacyBuiltIn() = dao.deleteUnsyncedBuiltIn()
 
-    /**
-     * Adds built-in recipes introduced after the first install. Skips any whose
-     * name already exists, so it never duplicates; the caller runs it once.
-     */
-    suspend fun seedMissing(seeds: List<SeedRecipe>) {
-        val existing = dao.getAllWithIngredientsOnce().map { it.recipe.name.trim().lowercase() }.toSet()
-        seeds.filter { it.name.trim().lowercase() !in existing }.forEach { insertSeed(it) }
-    }
-
-    private suspend fun insertSeed(seed: SeedRecipe) {
-        val recipe = Recipe(
-            name = seed.name,
-            description = seed.description,
-            servings = seed.servings,
-            prepTimeMinutes = seed.prepTimeMinutes,
-            cookTimeMinutes = seed.cookTimeMinutes,
-            instructionSteps = seed.steps,
-            category = seed.category,
-            tags = seed.tags,
-            isUserCreated = false
-        )
-        val ingredients = seed.ingredients.map {
-            RecipeIngredient(
-                recipeId = 0,
-                name = it.name,
-                normalizedName = RecipeIngredient.normalize(it.name),
-                quantity = it.quantity,
-                unit = it.unit
-            )
-        }
-        upsert(recipe, ingredients)
-    }
 }

@@ -3,6 +3,7 @@ package com.mojrucek.app.di
 import android.content.Context
 import com.mojrucek.app.data.AppDatabase
 import com.mojrucek.app.repository.BackupRepository
+import com.mojrucek.app.repository.CatalogSyncRepository
 import com.mojrucek.app.repository.IngredientRepository
 import com.mojrucek.app.repository.PlannerRepository
 import com.mojrucek.app.repository.RecipeRepository
@@ -21,6 +22,7 @@ class AppContainer(context: Context) {
     val ingredientRepository = IngredientRepository(database.ingredientDao())
     val recipeRepository = RecipeRepository(database.recipeDao())
     val settingsRepository = SettingsRepository(database.appSettingsDao())
+    val catalogSyncRepository = CatalogSyncRepository(context, database)
     val shoppingListRepository = ShoppingListRepository(database.shoppingListDao(), ingredientRepository)
     val plannerRepository = PlannerRepository(
         database.plannerDao(),

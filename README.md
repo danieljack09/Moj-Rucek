@@ -52,7 +52,7 @@ Running tests:
 - **Пазарење** — manual add, quantity/unit/category, purchased checkbox with separate purchased/unpurchased sections grouped by category, duplicate-combining, "Додади во домашни намирници" on purchase (with an explicit "no, bought for today" option that leaves inventory untouched), clear-purchased.
 - **Sunday reminder** — a self-rescheduling WorkManager job fires at the time you set in Поставки, with a POST_NOTIFICATIONS request on first launch (Android 13+) and a manual "Генерирај листа за пазарење" button that works with notifications off.
 - **Поставки** (reached from the gear icon on Почетна, not a 6th bottom-nav tab, per the 5-tab spec) — default household servings, reminder on/off and time, and JSON export (shares a `.json` file via the system share sheet) / import (file picker → validates → shows a summary → asks to confirm before overwriting anything).
-- **Sample data** — 15 realistic Macedonian lunch recipes seeded on first run (тавче гравче, мусака, полнети пиперки, пилешко со ориз, ќофтиња, сарма, леќа чорба, and more); you add your own 50–100 from there, no code editing needed.
+- **Catalog from the server** — the ingredient list and recipes are managed in the admin panel (`server/`, live at rucek.display.mk/admin) and synced into the app on start or via Settings → Синхронизирај; the app ships with no hardcoded recipes.
 
 ## Design decisions worth knowing about
 

@@ -54,6 +54,12 @@ interface RecipeDao {
     @Query("UPDATE recipes SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun setFavorite(id: Long, isFavorite: Boolean)
 
+    @Query("SELECT * FROM recipes WHERE serverId = :serverId LIMIT 1")
+    suspend fun findByServerId(serverId: Long): Recipe?
+
+    @Query("DELETE FROM recipes WHERE serverId IS NULL AND isUserCreated = 0")
+    suspend fun deleteUnsyncedBuiltIn()
+
     @Query("SELECT COUNT(*) FROM recipes")
     suspend fun count(): Int
 

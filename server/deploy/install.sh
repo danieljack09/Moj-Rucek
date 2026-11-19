@@ -37,7 +37,7 @@ fi
 # --- user and files ---
 id rucek >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin rucek
 mkdir -p "$APP/data"
-cp -r "$SRC/server.js" "$SRC/db.js" "$SRC/constants.js" "$SRC/package.json" "$SRC/public" "$APP/"
+cp -r "$SRC/server.js" "$SRC/db.js" "$SRC/constants.js" "$SRC/seed-ingredients.json" "$SRC/package.json" "$SRC/public" "$APP/"
 chown -R rucek:rucek "$APP"
 
 # --- service ---

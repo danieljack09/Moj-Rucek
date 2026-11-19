@@ -148,7 +148,7 @@ fun MojRucekNavHost(container: AppContainer) {
 
             composable(Dest.Ingredients.route) {
                 val vm: IngredientsViewModel = viewModel(factory = GenericViewModelFactory {
-                    IngredientsViewModel(container.ingredientRepository, container.recipeRepository)
+                    IngredientsViewModel(container.ingredientRepository, container.recipeRepository, container.catalogSyncRepository)
                 })
                 // One-shot: set when arriving from the Home "Намирници при крај" card.
                 LaunchedEffect(showLowStockOnly) {
@@ -202,7 +202,8 @@ fun MojRucekNavHost(container: AppContainer) {
                     SettingsViewModel(
                         navController.context.applicationContext as android.app.Application,
                         container.settingsRepository,
-                        container.backupRepository
+                        container.backupRepository,
+                        container.catalogSyncRepository
                     )
                 })
                 SettingsScreen(vm, onBack = { navController.popBackStack() })

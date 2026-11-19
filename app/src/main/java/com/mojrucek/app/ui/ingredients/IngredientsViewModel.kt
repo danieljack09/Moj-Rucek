@@ -7,12 +7,16 @@ import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.usecase.IngredientMergeUseCase
 import com.mojrucek.app.domain.util.MacedonianSearch
+import com.mojrucek.app.domain.usecase.IngredientSuggestion
+import com.mojrucek.app.domain.usecase.IngredientSuggestions
+import com.mojrucek.app.repository.CatalogSyncRepository
 import com.mojrucek.app.repository.IngredientRepository
 import com.mojrucek.app.repository.RecipeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -44,7 +48,8 @@ data class IngredientsUiState(
 
 class IngredientsViewModel(
     private val repository: IngredientRepository,
-    recipeRepository: RecipeRepository
+    recipeRepository: RecipeRepository,
+    catalogRepository: CatalogSyncRepository
 ) : ViewModel() {
 
     /** Ingredient names from the user's recipes and inventory, offered as autocomplete in the add form. */
@@ -52,6 +57,13 @@ class IngredientsViewModel(
         combine(repository.observeAll(), recipeRepository.observeAllWithIngredients()) { inventory, recipes ->
             (inventory.map { it.name } + recipes.flatMap { r -> r.ingredients.map { it.name } }).distinct()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Ingredient list the add form suggests from: the server catalog, or the built-in one until the first sync. */
+    val suggestionSource: StateFlow<List<IngredientSuggestion>> =
+        catalogRepository.observeIngredients().map { list ->
+            if (list.isEmpty()) IngredientSuggestions.catalog
+            else list.map { IngredientSuggestion(it.name, it.category, it.defaultUnit) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), IngredientSuggestions.catalog)
 
     private val searchQuery = MutableStateFlow("")
     private val categoryFilter = MutableStateFlow<IngredientCategory?>(null)

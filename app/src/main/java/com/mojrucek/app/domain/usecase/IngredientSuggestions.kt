@@ -43,6 +43,7 @@ object IngredientSuggestions {
     private fun s(name: String, category: IngredientCategory, unit: MeasurementUnit) =
         IngredientSuggestion(name, category, unit)
 
+    /** Offline fallback, used only until the first sync from the server succeeds. */
     val catalog: List<IngredientSuggestion> = listOf(
         // Зеленчук
         s("домати", ZELENCUK, KILOGRAM), s("краставици", ZELENCUK, PIECE), s("пиперки", ZELENCUK, PIECE),
@@ -124,20 +125,27 @@ object IngredientSuggestions {
     private val catalogByName = catalog.associateBy { it.name.lowercase() }
 
     /** Built-in category/unit for an exact name, if the catalog knows it. */
-    fun lookup(name: String): IngredientSuggestion? = catalogByName[name.trim().lowercase()]
+    fun lookup(name: String, source: List<IngredientSuggestion> = catalog): IngredientSuggestion? =
+        if (source === catalog) catalogByName[name.trim().lowercase()]
+        else source.firstOrNull { it.name.trim().lowercase() == name.trim().lowercase() }
 
     /**
      * Up to [limit] suggestions for [query]. [extraNames] (names from the
      * user's recipes and inventory) are offered too; when one matches a
      * catalog entry the catalog's category and unit are kept.
      */
-    fun suggest(query: String, extraNames: Collection<String> = emptyList(), limit: Int = 6): List<IngredientSuggestion> {
+    fun suggest(
+        query: String,
+        extraNames: Collection<String> = emptyList(),
+        limit: Int = 6,
+        source: List<IngredientSuggestion> = catalog
+    ): List<IngredientSuggestion> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return emptyList()
         val queryForms = setOf(q, toLatin(q), toPlainLatin(q))
 
         val candidates = LinkedHashMap<String, IngredientSuggestion>()
-        catalog.forEach { candidates[it.name.lowercase()] = it }
+        source.forEach { candidates[it.name.lowercase()] = it }
         extraNames.forEach { raw ->
             val name = raw.trim()
             if (name.isNotEmpty()) candidates.getOrPut(name.lowercase()) { IngredientSuggestion(name) }

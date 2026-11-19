@@ -129,6 +129,33 @@ function deleteIngredient(id) {
   if (res.changes === 0) throw new HttpError(404, 'Не е пронајдено.');
 }
 
+/**
+ * Imports the app's built-in ingredient list (seed-ingredients.json) so the admin
+ * panel shows everything the app already suggests. Insert-only: a name that already
+ * has a row (live or deleted) is left alone, so edits and deletions are never undone.
+ */
+function seedIngredients() {
+  let seed;
+  try {
+    seed = JSON.parse(fs.readFileSync(path.join(__dirname, 'seed-ingredients.json'), 'utf8'));
+  } catch {
+    return 0;
+  }
+  return transaction(() => {
+    const exists = db.prepare('SELECT 1 FROM ingredients WHERE name_key = ?');
+    const ins = db.prepare('INSERT INTO ingredients (name, name_key, category, default_unit, updated_at) VALUES (?,?,?,?,?)');
+    let added = 0;
+    for (const s of seed) {
+      if (exists.get(keyOf(s.name))) continue;
+      ins.run(s.name, keyOf(s.name), s.category, s.defaultUnit, now());
+      added++;
+    }
+    return added;
+  });
+}
+const seeded = seedIngredients();
+if (seeded) console.log(`Seeded ${seeded} built-in ingredients.`);
+
 // ---------- recipes ----------
 
 const parseJsonList = (s) => {

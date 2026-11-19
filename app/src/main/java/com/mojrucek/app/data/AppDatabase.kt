@@ -8,6 +8,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mojrucek.app.data.dao.AppSettingsDao
+import com.mojrucek.app.data.dao.CatalogDao
+import com.mojrucek.app.data.entity.CatalogIngredient
 import com.mojrucek.app.data.dao.IngredientDao
 import com.mojrucek.app.data.dao.PlannerDao
 import com.mojrucek.app.data.dao.RecipeDao
@@ -28,9 +30,10 @@ import com.mojrucek.app.data.entity.WeeklyPlan
         ShoppingListItem::class,
         PlannedMeal::class,
         WeeklyPlan::class,
-        AppSettings::class
+        AppSettings::class,
+        CatalogIngredient::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -41,6 +44,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun shoppingListDao(): ShoppingListDao
     abstract fun plannerDao(): PlannerDao
     abstract fun appSettingsDao(): AppSettingsDao
+    abstract fun catalogDao(): CatalogDao
 
     companion object {
         @Volatile
@@ -52,7 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "mojrucek.db"
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
 
         /**
@@ -88,6 +92,26 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE app_settings")
                 db.execSQL("ALTER TABLE app_settings_new RENAME TO app_settings")
+            }
+        }
+
+        /** Adds the synced ingredient catalog and links recipes to their server id. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS catalog_ingredients (" +
+                        "serverId INTEGER NOT NULL, " +
+                        "name TEXT NOT NULL, " +
+                        "normalizedName TEXT NOT NULL, " +
+                        "category TEXT NOT NULL, " +
+                        "defaultUnit TEXT NOT NULL, " +
+                        "PRIMARY KEY(serverId))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_catalog_ingredients_normalizedName " +
+                        "ON catalog_ingredients (normalizedName)"
+                )
+                db.execSQL("ALTER TABLE recipes ADD COLUMN serverId INTEGER")
             }
         }
     }
