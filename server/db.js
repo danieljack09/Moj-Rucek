@@ -84,6 +84,11 @@ const ingredientOut = (r) => ({
 
 const byName = (a, b) => a.name.localeCompare(b.name, 'mk');
 const keyOf = (name) => name.trim().toLowerCase();
+/** Ingredient names are stored with a capital first letter: "домати" → "Домати". */
+const capitalize = (name) => {
+  const n = name.trim();
+  return n.charAt(0).toLocaleUpperCase('mk') + n.slice(1);
+};
 
 function listIngredients() {
   return db
@@ -94,6 +99,7 @@ function listIngredients() {
 }
 
 function saveIngredient(id, { name, category, defaultUnit }) {
+  name = capitalize(name);
   return transaction(() => {
     const ts = now();
     const key = keyOf(name);
@@ -147,7 +153,7 @@ function seedIngredients() {
     let added = 0;
     for (const s of seed) {
       if (exists.get(keyOf(s.name))) continue;
-      ins.run(s.name, keyOf(s.name), s.category, s.defaultUnit, now());
+      ins.run(capitalize(s.name), keyOf(s.name), s.category, s.defaultUnit, now());
       added++;
     }
     return added;
@@ -155,6 +161,21 @@ function seedIngredients() {
 }
 const seeded = seedIngredients();
 if (seeded) console.log(`Seeded ${seeded} built-in ingredients.`);
+
+/** Capitalizes names stored before capitalization was enforced; bumps updated_at so apps re-sync them. */
+function capitalizeExistingIngredients() {
+  return transaction(() => {
+    const upd = db.prepare('UPDATE ingredients SET name = ?, updated_at = ? WHERE id = ?');
+    let changed = 0;
+    for (const r of db.prepare('SELECT id, name FROM ingredients').all()) {
+      const fixed = capitalize(r.name);
+      if (fixed !== r.name) { upd.run(fixed, now(), r.id); changed++; }
+    }
+    return changed;
+  });
+}
+const capitalized = capitalizeExistingIngredients();
+if (capitalized) console.log(`Capitalized ${capitalized} ingredient names.`);
 
 // ---------- recipes ----------
 

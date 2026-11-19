@@ -40,8 +40,9 @@ data class IngredientSuggestion(
  */
 object IngredientSuggestions {
 
+    // Names are shown capitalized, matching the server catalog ("домати" → "Домати").
     private fun s(name: String, category: IngredientCategory, unit: MeasurementUnit) =
-        IngredientSuggestion(name, category, unit)
+        IngredientSuggestion(name.replaceFirstChar { it.uppercase() }, category, unit)
 
     /** Offline fallback, used only until the first sync from the server succeeds. */
     val catalog: List<IngredientSuggestion> = listOf(

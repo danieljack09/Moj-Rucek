@@ -1,756 +1,756 @@
 [
  {
-  "name": "домати",
+  "name": "Домати",
   "category": "ZELENCUK",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "краставици",
+  "name": "Краставици",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "пиперки",
+  "name": "Пиперки",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "љути пиперки",
+  "name": "Љути пиперки",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "кромид",
+  "name": "Кромид",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "млад кромид",
+  "name": "Млад кромид",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "лук",
+  "name": "Лук",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "млад лук",
+  "name": "Млад лук",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "компир",
+  "name": "Компир",
   "category": "ZELENCUK",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "морков",
+  "name": "Морков",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "зелка",
+  "name": "Зелка",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "кисела зелка",
+  "name": "Кисела зелка",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "тиквички",
+  "name": "Тиквички",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "модри патлиџани",
+  "name": "Модри патлиџани",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "спанаќ",
+  "name": "Спанаќ",
   "category": "ZELENCUK",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "зелена салата",
+  "name": "Зелена салата",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "магдонос",
+  "name": "Магдонос",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "копар",
+  "name": "Копар",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "целер",
+  "name": "Целер",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "праз",
+  "name": "Праз",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "карфиол",
+  "name": "Карфиол",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "брокула",
+  "name": "Брокула",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "цвекло",
+  "name": "Цвекло",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "печурки",
+  "name": "Печурки",
   "category": "ZELENCUK",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "боранија",
+  "name": "Боранија",
   "category": "ZELENCUK",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "грашок",
+  "name": "Грашок",
   "category": "ZELENCUK",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пченка",
+  "name": "Пченка",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "тиква",
+  "name": "Тиква",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "ротквици",
+  "name": "Ротквици",
   "category": "ZELENCUK",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "блитва",
+  "name": "Блитва",
   "category": "ZELENCUK",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "јаболка",
+  "name": "Јаболка",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "банани",
+  "name": "Банани",
   "category": "OVOSJE",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "портокали",
+  "name": "Портокали",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "лимон",
+  "name": "Лимон",
   "category": "OVOSJE",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "мандарини",
+  "name": "Мандарини",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "круши",
+  "name": "Круши",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "грозје",
+  "name": "Грозје",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "јагоди",
+  "name": "Јагоди",
   "category": "OVOSJE",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "праски",
-  "category": "OVOSJE",
-  "defaultUnit": "KILOGRAM"
- },
- {
-  "name": "кајсии",
+  "name": "Праски",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "сливи",
+  "name": "Кајсии",
   "category": "OVOSJE",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "цреши",
+  "name": "Сливи",
+  "category": "OVOSJE",
+  "defaultUnit": "KILOGRAM"
+ },
+ {
+  "name": "Цреши",
   "category": "OVOSJE",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "лубеница",
+  "name": "Лубеница",
   "category": "OVOSJE",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "диња",
+  "name": "Диња",
   "category": "OVOSJE",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "киви",
+  "name": "Киви",
   "category": "OVOSJE",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "суви сливи",
+  "name": "Суви сливи",
   "category": "OVOSJE",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "суво грозје",
+  "name": "Суво грозје",
   "category": "OVOSJE",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "ореви",
+  "name": "Ореви",
   "category": "OVOSJE",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пилешко месо",
+  "name": "Пилешко месо",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пилешки гради",
+  "name": "Пилешки гради",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пилешки батаци",
+  "name": "Пилешки батаци",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пилешки крилца",
+  "name": "Пилешки крилца",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "свинско месо",
+  "name": "Свинско месо",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "телешко месо",
+  "name": "Телешко месо",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "јагнешко месо",
+  "name": "Јагнешко месо",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "мелено месо",
+  "name": "Мелено месо",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "колбаси",
+  "name": "Колбаси",
   "category": "MESO",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "виршли",
+  "name": "Виршли",
   "category": "MESO",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "сланина",
+  "name": "Сланина",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "шунка",
+  "name": "Шунка",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пршута",
+  "name": "Пршута",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "салама",
+  "name": "Салама",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "кебапи",
+  "name": "Кебапи",
   "category": "MESO",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "плескавици",
+  "name": "Плескавици",
   "category": "MESO",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "риба (филети)",
+  "name": "Риба (филети)",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пастрмка",
+  "name": "Пастрмка",
   "category": "MESO",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "скуша",
+  "name": "Скуша",
   "category": "MESO",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "ослич",
+  "name": "Ослич",
   "category": "MESO",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "млеко",
+  "name": "Млеко",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "кисело млеко",
+  "name": "Кисело млеко",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "павлака",
+  "name": "Павлака",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "кајмак",
+  "name": "Кајмак",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "сирење",
+  "name": "Сирење",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "кашкавал",
+  "name": "Кашкавал",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "путер",
+  "name": "Путер",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "јогурт",
+  "name": "Јогурт",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "урда",
+  "name": "Урда",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "моцарела",
+  "name": "Моцарела",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "пармезан",
+  "name": "Пармезан",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "слатка павлака",
+  "name": "Слатка павлака",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "MILLILITER"
  },
  {
-  "name": "крем сирење",
+  "name": "Крем сирење",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "матеница",
+  "name": "Матеница",
   "category": "MLECNI_PROIZVODI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "јајца",
+  "name": "Јајца",
   "category": "JAJCA",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "брашно",
+  "name": "Брашно",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "KILOGRAM"
  },
  {
-  "name": "пченкарно брашно",
+  "name": "Пченкарно брашно",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "ориз",
+  "name": "Ориз",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "шпагети",
+  "name": "Шпагети",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "макарони",
+  "name": "Макарони",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пенне",
+  "name": "Пенне",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "резанки",
+  "name": "Резанки",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "грав",
+  "name": "Грав",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "леќа",
+  "name": "Леќа",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "наут",
+  "name": "Наут",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "овесни снегулки",
+  "name": "Овесни снегулки",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "булгур",
+  "name": "Булгур",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "гриз",
+  "name": "Гриз",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "лазања кори",
+  "name": "Лазања кори",
   "category": "ZITARICI_I_TESTENINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "леб",
+  "name": "Леб",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "интегрален леб",
+  "name": "Интегрален леб",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "кори за пита",
+  "name": "Кори за пита",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "лиснато тесто",
+  "name": "Лиснато тесто",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "тортиљи",
+  "name": "Тортиљи",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "презла",
+  "name": "Презла",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "квасец",
+  "name": "Квасец",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "прашок за пециво",
+  "name": "Прашок за пециво",
   "category": "LEB_I_PEKARSKI_PROIZVODI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "домати (сос)",
+  "name": "Домати (сос)",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "пелати",
+  "name": "Пелати",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "CAN"
  },
  {
-  "name": "доматно пире",
+  "name": "Доматно пире",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "туна",
-  "category": "KONZERVIRANA_HRANA",
-  "defaultUnit": "CAN"
- },
- {
-  "name": "пченка (конзерва)",
+  "name": "Туна",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "CAN"
  },
  {
-  "name": "грашок (конзерва)",
+  "name": "Пченка (конзерва)",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "CAN"
  },
  {
-  "name": "ајвар",
-  "category": "KONZERVIRANA_HRANA",
-  "defaultUnit": "PIECE"
- },
- {
-  "name": "маслинки",
-  "category": "KONZERVIRANA_HRANA",
-  "defaultUnit": "GRAM"
- },
- {
-  "name": "кисели краставички",
-  "category": "KONZERVIRANA_HRANA",
-  "defaultUnit": "PIECE"
- },
- {
-  "name": "сардини",
+  "name": "Грашок (конзерва)",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "CAN"
  },
  {
-  "name": "џем",
+  "name": "Ајвар",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "мед",
+  "name": "Маслинки",
+  "category": "KONZERVIRANA_HRANA",
+  "defaultUnit": "GRAM"
+ },
+ {
+  "name": "Кисели краставички",
   "category": "KONZERVIRANA_HRANA",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "сол",
+  "name": "Сардини",
+  "category": "KONZERVIRANA_HRANA",
+  "defaultUnit": "CAN"
+ },
+ {
+  "name": "Џем",
+  "category": "KONZERVIRANA_HRANA",
+  "defaultUnit": "PIECE"
+ },
+ {
+  "name": "Мед",
+  "category": "KONZERVIRANA_HRANA",
+  "defaultUnit": "PIECE"
+ },
+ {
+  "name": "Сол",
   "category": "ZACINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "шеќер",
+  "name": "Шеќер",
   "category": "ZACINI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "црн пипер",
+  "name": "Црн пипер",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "црвен пипер (зачин)",
+  "name": "Црвен пипер (зачин)",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "лут пипер",
+  "name": "Лут пипер",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "ловоров лист",
+  "name": "Ловоров лист",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "вегета",
+  "name": "Вегета",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "чубрица",
+  "name": "Чубрица",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "босилек",
+  "name": "Босилек",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "оригано",
+  "name": "Оригано",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "ким",
+  "name": "Ким",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "цимет",
+  "name": "Цимет",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "ванилин шеќер",
+  "name": "Ванилин шеќер",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "нане",
+  "name": "Нане",
   "category": "ZACINI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "масло",
+  "name": "Масло",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "маслиново масло",
+  "name": "Маслиново масло",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "оцет",
+  "name": "Оцет",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "кечап",
+  "name": "Кечап",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "мајонез",
+  "name": "Мајонез",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "сенф",
+  "name": "Сенф",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "соја сос",
+  "name": "Соја сос",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "маргарин",
+  "name": "Маргарин",
   "category": "MASLA_I_DODATOCI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "замрзнат зеленчук",
+  "name": "Замрзнат зеленчук",
   "category": "ZAMRZNATA_HRANA",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "помфрит",
+  "name": "Помфрит",
   "category": "ZAMRZNATA_HRANA",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "замрзнат грашок",
+  "name": "Замрзнат грашок",
   "category": "ZAMRZNATA_HRANA",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "замрзнати пици",
+  "name": "Замрзнати пици",
   "category": "ZAMRZNATA_HRANA",
   "defaultUnit": "PIECE"
  },
  {
-  "name": "сладолед",
+  "name": "Сладолед",
   "category": "ZAMRZNATA_HRANA",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "вода",
+  "name": "Вода",
   "category": "PIJALOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "минерална вода",
+  "name": "Минерална вода",
   "category": "PIJALOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "сок",
+  "name": "Сок",
   "category": "PIJALOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "кафе",
+  "name": "Кафе",
   "category": "PIJALOCI",
   "defaultUnit": "GRAM"
  },
  {
-  "name": "чај",
+  "name": "Чај",
   "category": "PIJALOCI",
   "defaultUnit": "PACKAGE"
  },
  {
-  "name": "вино",
+  "name": "Вино",
   "category": "PIJALOCI",
   "defaultUnit": "LITER"
  },
  {
-  "name": "пиво",
+  "name": "Пиво",
   "category": "PIJALOCI",
   "defaultUnit": "LITER"
  }
