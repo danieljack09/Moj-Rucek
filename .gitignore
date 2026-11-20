@@ -14,3 +14,20 @@ build/
 
 # Room schema export (regenerated from entities)
 app/schemas/
+
+# Secrets and credentials: this repository is public. Never commit these.
+# Firebase / Google (each developer downloads google-services.json from the Firebase console)
+google-services.json
+**/google-services.json
+service-account*.json
+firebase-debug.log
+# Signing keys and their passwords
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+# Environment files
+.env
+.env.*

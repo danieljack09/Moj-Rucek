@@ -6,6 +6,12 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// The Firebase config is kept out of this public repository (see README, "Firebase setup").
+// Without it the app still builds and runs; only accounts are unavailable.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.mojrucek.app"
     compileSdk = 34

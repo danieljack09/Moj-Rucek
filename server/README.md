@@ -52,7 +52,7 @@ sudo cp ~/rucek-server-upload/deploy/rucek.display.mk.nginx.conf /etc/nginx/site
 sudo ln -s /etc/nginx/sites-available/rucek.display.mk /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
-# 6. HTTPS (DNS A record rucek.display.mk -> 159.195.5.43 must exist first)
+# 6. HTTPS (DNS A record rucek.display.mk -> the VPS address must exist first)
 sudo certbot --nginx -d rucek.display.mk
 ```
 

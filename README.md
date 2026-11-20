@@ -43,6 +43,26 @@ Running tests:
 ./gradlew connectedDebugAndroidTest  # instrumented tests (Room) — needs a device/emulator
 ```
 
+## Firebase setup (local only, never committed)
+
+This repository is public, so the Firebase config file is **not** in it. Without the file the app still builds and runs; user accounts are simply unavailable in that build.
+
+To enable accounts on your machine:
+
+1. Ask the project owner for access to the Firebase project, then open Firebase Console → Project settings → *Your apps*.
+2. After **both** Android apps (`com.mojrucek.app` and `com.mojrucek.app.debug`) are registered in the project, download `google-services.json` and put it at `app/google-services.json`. One file contains both apps. Download it again whenever an app or a SHA fingerprint is added; a file missing one of the apps makes that build fail with "No matching client found".
+3. Check that Git ignores it. This must print a matching `.gitignore` rule:
+   ```bash
+   git check-ignore -v app/google-services.json
+   ```
+4. Google sign-in in debug builds only works if **your** debug key's fingerprints are registered in the Firebase project (every computer has its own debug key). Print them and send the SHA-1 and SHA-256 lines to the project owner:
+   ```bash
+   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+   ```
+5. App Check debug builds print a debug token in logcat. Register it in Firebase Console → App Check → *Manage debug tokens*. Never paste it into code or Gradle files.
+
+Never commit `google-services.json`, service-account files, keystores (`*.jks`, `*.keystore`), signing passwords, App Check debug tokens or server `.env` files. Release signing passwords belong in your user-level `~/.gradle/gradle.properties`, never in this repository.
+
 ## What's implemented
 
 - **Почетна** — today's lunch with a change button, ingredient/low-stock summary, 3–5 suggested recipes ranked by what you can cook, next week's plan status, quick-add shortcuts.
