@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -u
+. "$(dirname "$0")/_lib.sh"
+echo "systemctl $*" >>"$FAKE_DIR/calls.log"
+[[ "$*" == "reload nginx" ]] || { echo "fake systemctl: unsupported: $*" >&2; exit 1; }
+n=$(counter reload)
+if fails RELOAD "$n"; then echo "Job for nginx.service failed (injected)" >&2; exit 1; fi
+pause_if RELOAD "$n"   # after a successful reload
+exit 0

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+echo "1.1.1.1 via 203.0.113.1 dev eth0 src 203.0.113.10 uid 0"   # documentation address, not the real server

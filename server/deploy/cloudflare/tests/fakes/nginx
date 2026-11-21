@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Fake nginx: '-t' succeeds unless injected; also rejects obviously broken generated files.
+set -u
+. "$(dirname "$0")/_lib.sh"
+echo "nginx $*" >>"$FAKE_DIR/calls.log"
+[[ ${1:-} == -t ]] || { echo "fake nginx: only -t is supported" >&2; exit 1; }
+n=$(counter nginx_t)
+pause_if NGINX_T "$n"   # the files being tested are already on disk
+bad=""
+if fails NGINX_T "$n"; then bad="injected failure"; fi
+for f in "${RUCEK_CF_NGINX_GEO:-}" "${RUCEK_CF_NGINX_REALIP:-}"; do
+  [[ -n $f && -e $f ]] || continue
+  c=$(<"$f"); [[ $c == *$'\r'* ]] && bad="CR in $f"
+  [[ $(tail -c 2 "$f") == "}" || $f == "$RUCEK_CF_NGINX_REALIP" ]] || bad="unterminated block in $f"
+done
+if [[ -n $bad ]]; then
+  echo "nginx: [emerg] $bad" >&2
+  echo "nginx: configuration file /etc/nginx/nginx.conf test failed" >&2
+  exit 1
+fi
+echo "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok" >&2
+echo "nginx: configuration file /etc/nginx/nginx.conf test is successful" >&2

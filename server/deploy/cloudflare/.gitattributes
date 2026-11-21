@@ -1,0 +1,4 @@
+# Everything here runs on Linux: always LF, even on a Windows checkout.
+* text eol=lf
+# Must stay byte-identical to the live file (sha256 5fa3e2e2...41be28, no final newline).
+vhost/rucek.display.mk.audited -text

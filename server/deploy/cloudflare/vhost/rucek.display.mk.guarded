@@ -1,0 +1,47 @@
+# HTTP-only to start with. `sudo certbot --nginx -d rucek.display.mk` then adds
+# the TLS block and the http -> https redirect to this file.
+server {
+    server_name rucek.display.mk;
+
+    # Cloudflare-only access (rucek-cloudflare-update). $rucek_from_cf comes from
+    # /etc/nginx/conf.d/rucek-cloudflare-geo.conf and checks the TCP peer, not headers.
+    include /etc/nginx/snippets/rucek-cloudflare-realip.conf;
+    if ($rucek_from_cf = 0) { return 403; }
+
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "";
+    }
+
+    listen 443 ssl; # managed by Certbot
+    listen [::]:443 ssl ipv6only=on; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/rucek.display.mk/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/rucek.display.mk/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+
+server {
+    # Cloudflare-only access (rucek-cloudflare-update); must stay before the redirect.
+    include /etc/nginx/snippets/rucek-cloudflare-realip.conf;
+    if ($rucek_from_cf = 0) { return 403; }
+
+    if ($host = rucek.display.mk) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name rucek.display.mk;
+    return 404; # managed by Certbot
+
+
+}

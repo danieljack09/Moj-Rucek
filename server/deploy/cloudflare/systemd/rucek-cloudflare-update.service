@@ -1,0 +1,27 @@
+[Unit]
+Description=Sync the Cloudflare origin allowlist (UFW + nginx) for rucek.display.mk
+Documentation=file:///usr/local/share/rucek-cloudflare/README.md
+Wants=network-online.target
+After=network-online.target nginx.service ufw.service
+# Does nothing until 'rucek-cloudflare-update --adopt' has recorded the managed rules.
+ConditionPathExists=/var/lib/rucek-cloudflare/managed-rules.txt
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rucek-cloudflare-update
+# A run normally takes seconds; never let it hang.
+TimeoutStartSec=15min
+Nice=10
+UMask=0022
+# Hardening that does not interfere with ufw (iptables), nginx -t or systemctl reload.
+# ProtectSystem= is deliberately not used: the job must write /etc/ufw and /etc/nginx,
+# and a read-only path discovered halfway through a firewall change is worse than no sandbox.
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ProtectHostname=true
+ProtectClock=true
+SystemCallArchitectures=native

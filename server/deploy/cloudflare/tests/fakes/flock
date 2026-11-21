@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake flock -n FD: a pid file next to the lock file stands in for the kernel lock.
+set -u
+p="$RUCEK_CF_LOCK_FILE.pid"
+if [[ -f $p ]]; then
+  holder=$(cat "$p")
+  if [[ $holder != "$PPID" ]] && kill -0 "$holder" 2>/dev/null; then exit 1; fi
+fi
+echo "$PPID" >"$p"
+exit 0

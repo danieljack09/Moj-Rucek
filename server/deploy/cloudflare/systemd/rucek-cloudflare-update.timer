@@ -1,0 +1,12 @@
+[Unit]
+Description=Monthly Cloudflare origin allowlist sync for rucek.display.mk
+
+[Timer]
+OnCalendar=monthly
+RandomizedDelaySec=6h
+AccuracySec=1h
+# Catch up after downtime (runs at the next boot if a month was missed).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

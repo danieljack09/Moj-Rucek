@@ -1,0 +1,1050 @@
+#!/usr/bin/env bash
+# rucek-cloudflare-update: keeps the Cloudflare-only origin allowlist in sync in two places.
+#
+#   1. UFW:   one rule per Cloudflare range and port, in exactly the existing format:
+#               ufw allow from <range> to any port <80|443> proto tcp comment 'Cloudflare'
+#   2. nginx: /etc/nginx/conf.d/rucek-cloudflare-geo.conf      ($rucek_from_cf, http context)
+#             /etc/nginx/snippets/rucek-cloudflare-realip.conf  (included by the rucek vhost only)
+#
+# Safety rules (details in README.md):
+#   * Only rules matching the exact template above are ever added or deleted. Every other rule
+#     (both SSH rules, anything unknown) is compared byte-for-byte before and after each command.
+#   * Rules are deleted by exact text including the comment, never by number.
+#   * Never used: ufw reset / disable / reload / --force, delete by number, iptables/nft flush.
+#   * New ranges are added and verified before obsolete ones are removed.
+#   * Any failure or SIGTERM/SIGINT restores the Cloudflare UFW rules to the snapshot taken before
+#     the run (re-adds first, then removes this run's additions) and restores the nginx files.
+#
+# Exit codes: 0 ok or nothing to do; 1 error, nothing changed or fully rolled back;
+#             2 needs review, nothing changed; 3 CRITICAL, rollback incomplete (see output).
+
+set -uo pipefail
+umask 022
+export LC_ALL=C
+
+readonly VERSION="1.0"
+readonly COMMENT="Cloudflare"
+readonly MAX_ADD_RANGES=5
+readonly MAX_REMOVE_RANGES=3
+readonly BACKUP_KEEP=5
+# sha256 of vhost/rucek.display.mk.audited (the pre-guard live vhost). --restore-vhost uses the
+# installed copy only if it still has exactly this content.
+readonly AUDITED_VHOST_SHA256=5fa3e2e2dd4cd5fb72ad66ef59edd22e65be7ea8499d75f5a2fae783ba41be28
+
+# ----------------------------------------------------------------------------------------------
+# Configuration. Paths are fixed in production. The test suite (RUCEK_CF_TEST_MODE=1, which is
+# refused when running as root) may point them at fakes and temporary folders.
+# ----------------------------------------------------------------------------------------------
+TEST_MODE=0
+[[ "${RUCEK_CF_TEST_MODE:-0}" == 1 ]] && TEST_MODE=1
+
+cfg() {
+  local name=$1 default=$2 override="RUCEK_CF_$1"
+  if (( TEST_MODE )) && [[ -n "${!override:-}" ]]; then
+    printf -v "$name" '%s' "${!override}"
+  else
+    printf -v "$name" '%s' "$default"
+  fi
+}
+cfg UFW              /usr/sbin/ufw
+cfg NGINX            /usr/sbin/nginx
+cfg SYSTEMCTL        /usr/bin/systemctl
+cfg CURL             /usr/bin/curl
+cfg FLOCK            /usr/bin/flock
+cfg IP               /usr/sbin/ip
+cfg UFW_DEFAULTS     /etc/default/ufw
+cfg UFW_RULES_DIR    /etc/ufw
+cfg STATE_DIR        /var/lib/rucek-cloudflare
+cfg SHARE_DIR        /usr/local/share/rucek-cloudflare
+cfg LOCK_FILE        /run/rucek-cloudflare-update.lock
+cfg NGINX_GEO        /etc/nginx/conf.d/rucek-cloudflare-geo.conf
+cfg NGINX_REALIP     /etc/nginx/snippets/rucek-cloudflare-realip.conf
+cfg VHOST            /etc/nginx/sites-available/rucek.display.mk
+cfg DISPLAY_FILES    "/etc/nginx/sites-available/display.mk /etc/nginx/sites-available/display.mk-ssl"
+cfg CF_V4_URL        https://www.cloudflare.com/ips-v4
+cfg CF_V6_URL        https://www.cloudflare.com/ips-v6
+cfg HEALTH_HOST      rucek.display.mk
+cfg HEALTH_PATH      /health
+cfg HEALTH_TRIES     5
+cfg HEALTH_DELAY     1
+cfg TMP_BASE         "${TMPDIR:-/tmp}"
+
+STATE_FILE="$STATE_DIR/managed-rules.txt"
+BACKUP_ROOT="$STATE_DIR/backups"
+AUDITED_VHOST="$SHARE_DIR/rucek.display.mk.audited"
+GUARDED_VHOST="$SHARE_DIR/rucek.display.mk.guarded"
+
+# ----------------------------------------------------------------------------------------------
+# Output
+# ----------------------------------------------------------------------------------------------
+log()  { printf '%s\n' "$*"; }
+warn() { printf 'WARNING: %s\n' "$*"; }
+err()  { printf 'ERROR: %s\n' "$*" >&2; }
+crit() { printf 'CRITICAL: %s\n' "$*" >&2; }
+
+usage() {
+  cat <<'EOF'
+Usage: rucek-cloudflare-update [MODE] [OPTIONS]
+
+Modes (default: update, which is what the monthly timer runs):
+  --dry-run               Download, validate and print the plan. Changes nothing.
+  --adopt                 First run: record the existing 'Cloudflare' UFW rules as managed
+                          (no UFW commands) and create the nginx geo/real-IP files.
+  --install-vhost-guard   Install the guarded rucek.display.mk vhost (one time).
+  --restore-vhost         Put back the vhost saved by --install-vhost-guard.
+
+Options:
+  --source-dir DIR        Read ips-v4 / ips-v6 from DIR instead of downloading.
+  --accept-large-change   Allow more than 5 added or 3 removed ranges in one run.
+  --from BACKUP_DIR       With --restore-vhost: restore from this backup folder.
+  -h, --help              Show this help.
+EOF
+}
+
+# ----------------------------------------------------------------------------------------------
+# Arguments
+# ----------------------------------------------------------------------------------------------
+MODE=update
+MODE_SET=0
+SOURCE_DIR=""
+ACCEPT_LARGE=0
+RESTORE_FROM=""
+
+set_mode() {
+  if (( MODE_SET )); then err "only one mode can be given"; exit 1; fi
+  MODE=$1; MODE_SET=1
+}
+while (( $# )); do
+  case $1 in
+    --dry-run)             set_mode dry-run ;;
+    --adopt)               set_mode adopt ;;
+    --install-vhost-guard) set_mode install-guard ;;
+    --restore-vhost)       set_mode restore-vhost ;;
+    --source-dir)          [[ $# -ge 2 ]] || { err "--source-dir needs a folder"; exit 1; }; SOURCE_DIR=$2; shift ;;
+    --from)                [[ $# -ge 2 ]] || { err "--from needs a folder"; exit 1; }; RESTORE_FROM=$2; shift ;;
+    --accept-large-change) ACCEPT_LARGE=1 ;;
+    -h|--help)             usage; exit 0 ;;
+    *)                     err "unknown option: $1"; usage >&2; exit 1 ;;
+  esac
+  shift
+done
+
+if (( TEST_MODE )); then
+  if [[ $EUID -eq 0 ]]; then err "test mode must never run as root"; exit 1; fi
+else
+  if [[ $EUID -ne 0 ]]; then err "must run as root"; exit 1; fi
+fi
+
+# ----------------------------------------------------------------------------------------------
+# Working folder, lock
+# ----------------------------------------------------------------------------------------------
+WORK=$(mktemp -d "$TMP_BASE/rucek-cf.XXXXXX") || { err "cannot create a temporary folder"; exit 1; }
+cleanup() { rm -rf -- "$WORK"; }
+trap cleanup EXIT
+
+acquire_lock() {
+  exec 9>"$LOCK_FILE" || { err "cannot open lock file $LOCK_FILE"; exit 1; }
+  if ! "$FLOCK" -n 9; then
+    err "another rucek-cloudflare-update run is in progress"
+    exit 1
+  fi
+}
+
+# ----------------------------------------------------------------------------------------------
+# Address validation. The canonical form must equal what ufw prints (inet_ntop), otherwise the
+# rule text would not match. That is also why /32 and /128 are refused: ufw drops them.
+# ----------------------------------------------------------------------------------------------
+VALID_ERR=""
+REPLY=""
+declare -A VALID_CACHE=()   # range -> 1 once validated (validation is pure, so caching is safe)
+
+# Reserved IPv4 blocks, parsed once.
+declare -a RES4_NET=() RES4_LEN=() RES4_TXT=()
+for _r in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 \
+          192.0.0.0/24 192.0.2.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 \
+          203.0.113.0/24 224.0.0.0/3; do
+  [[ $_r =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)/([0-9]+)$ ]]
+  RES4_NET+=($(( (BASH_REMATCH[1] << 24) | (BASH_REMATCH[2] << 16) | (BASH_REMATCH[3] << 8) | BASH_REMATCH[4] )))
+  RES4_LEN+=("${BASH_REMATCH[5]}"); RES4_TXT+=("$_r")
+done
+unset _r
+
+valid_v4() {
+  local s=$1
+  if [[ ! $s =~ ^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})/([1-9][0-9]?)$ ]]; then
+    VALID_ERR="not a canonical IPv4 range"; return 1
+  fi
+  local o1=${BASH_REMATCH[1]} o2=${BASH_REMATCH[2]} o3=${BASH_REMATCH[3]} o4=${BASH_REMATCH[4]} p=${BASH_REMATCH[5]}
+  (( o1 <= 255 && o2 <= 255 && o3 <= 255 && o4 <= 255 )) || { VALID_ERR="octet above 255"; return 1; }
+  (( p >= 8 && p <= 31 )) || { VALID_ERR="IPv4 prefix must be /8 to /31"; return 1; }
+  local ip=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+  local m=$(( (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF ))
+  (( (ip & ~m & 0xFFFFFFFF) == 0 )) || { VALID_ERR="host bits set (not a network address)"; return 1; }
+  local i pm
+  for i in "${!RES4_NET[@]}"; do
+    pm=$(( p < RES4_LEN[i] ? p : RES4_LEN[i] ))
+    m=$(( (0xFFFFFFFF << (32 - pm)) & 0xFFFFFFFF ))
+    if (( (ip & m) == (RES4_NET[i] & m) )); then VALID_ERR="overlaps reserved range ${RES4_TXT[i]}"; return 1; fi
+  done
+  return 0
+}
+
+# Sets REPLY to the address as 32 hex digits, or fails.
+v6_expand() {
+  local a=$1
+  [[ $a =~ ^[0-9a-f:]+$ ]] || return 1
+  [[ $a == *:::* ]] && return 1
+  local marked=${a//::/@}
+  [[ $marked == *@*@* ]] && return 1
+  [[ $marked == :* || $marked == *: ]] && return 1
+  local -a left=() right=() groups=()
+  local g i h
+  if [[ $marked == *@* ]]; then
+    local l=${marked%%@*} r=${marked#*@}
+    [[ -n $l ]] && IFS=: read -r -a left <<<"$l"
+    [[ -n $r ]] && IFS=: read -r -a right <<<"$r"
+    (( ${#left[@]} + ${#right[@]} <= 7 )) || return 1
+    groups=("${left[@]}")
+    for (( i = 0; i < 8 - ${#left[@]} - ${#right[@]}; i++ )); do groups+=(0); done
+    groups+=("${right[@]}")
+  else
+    IFS=: read -r -a groups <<<"$marked"
+    (( ${#groups[@]} == 8 )) || return 1
+  fi
+  REPLY=""
+  for g in "${groups[@]}"; do
+    [[ $g =~ ^[0-9a-f]{1,4}$ ]] || return 1
+    printf -v h '%04x' "$((16#$g))"
+    REPLY+=$h
+  done
+  return 0
+}
+
+# Sets REPLY to the RFC 5952 text (same as glibc inet_ntop) of 32 hex digits.
+v6_compress() {
+  local full=$1 i
+  local -a g=()
+  for (( i = 0; i < 8; i++ )); do printf -v 'g[i]' '%x' "$((16#${full:i*4:4}))"; done
+  local best=-1 bestlen=0 cur=-1 curlen=0
+  for (( i = 0; i < 8; i++ )); do
+    if [[ ${g[i]} == 0 ]]; then
+      (( cur < 0 )) && { cur=$i; curlen=0; }
+      curlen=$((curlen + 1))
+      (( curlen > bestlen )) && { best=$cur; bestlen=$curlen; }
+    else
+      cur=-1
+    fi
+  done
+  (( bestlen < 2 )) && best=-1
+  local out="" sep=""
+  for (( i = 0; i < 8; i++ )); do
+    if (( best >= 0 && i == best )); then out+="::"; sep=""; i=$(( i + bestlen - 1 )); continue; fi
+    out+="$sep${g[i]}"; sep=":"
+  done
+  REPLY=$out
+}
+
+valid_v6() {
+  local s=$1
+  if [[ ! $s =~ ^([0-9a-f:]+)/([1-9][0-9]{0,2})$ ]]; then VALID_ERR="not a canonical IPv6 range"; return 1; fi
+  local addr=${BASH_REMATCH[1]} p=${BASH_REMATCH[2]} full
+  (( p >= 16 && p <= 127 )) || { VALID_ERR="IPv6 prefix must be /16 to /127"; return 1; }
+  v6_expand "$addr" || { VALID_ERR="invalid IPv6 address"; return 1; }
+  full=$REPLY
+  v6_compress "$full"
+  [[ $REPLY == "$addr" ]] || { VALID_ERR="not in canonical form (would be $REPLY/$p)"; return 1; }
+  local first=$((16#${full:0:4}))
+  (( first >= 0x2000 && first <= 0x3fff )) || { VALID_ERR="not a global unicast address (2000::/3)"; return 1; }
+  [[ ${full:0:8} == 20010db8 ]] && { VALID_ERR="documentation range 2001:db8::/32"; return 1; }
+  local n nib keep
+  for (( n = 0; n < 32; n++ )); do
+    nib=$((16#${full:n:1}))
+    if (( n * 4 >= p )); then
+      (( nib == 0 )) || { VALID_ERR="host bits set (not a network address)"; return 1; }
+    elif (( n * 4 + 4 > p )); then
+      keep=$(( p - n * 4 ))
+      (( (nib & ((1 << (4 - keep)) - 1)) == 0 )) || { VALID_ERR="host bits set (not a network address)"; return 1; }
+    fi
+  done
+  return 0
+}
+
+valid_range() {
+  [[ -n ${VALID_CACHE[$1]:-} ]] && return 0
+  if [[ $1 == *:* ]]; then valid_v6 "$1" || return 1; else valid_v4 "$1" || return 1; fi
+  VALID_CACHE[$1]=1
+}
+
+# ----------------------------------------------------------------------------------------------
+# Cloudflare lists
+# ----------------------------------------------------------------------------------------------
+declare -a CF_V4=() CF_V6=()
+
+# load_list FILE FAMILY(4|6) MIN MAX ARRAYNAME
+load_list() {
+  local file=$1 fam=$2 min=$3 max=$4 arr=$5 line n=0 blank=0
+  local -A seen=()
+  local -a items=()
+  local content
+  content=$(<"$file")   # not grep: some grep builds strip CR before matching
+  if [[ $content == *$'\r'* ]]; then err "IPv$fam list contains carriage returns"; return 1; fi
+  while IFS= read -r line || [[ -n $line ]]; do
+    n=$((n + 1))
+    if [[ -z $line ]]; then blank=1; continue; fi
+    if (( blank )); then err "IPv$fam list line $n: content after an empty line"; return 1; fi
+    if [[ $fam == 4 ]]; then
+      valid_v4 "$line" || { err "IPv$fam list line $n ('${line:0:60}'): $VALID_ERR"; return 1; }
+    else
+      valid_v6 "$line" || { err "IPv$fam list line $n ('${line:0:60}'): $VALID_ERR"; return 1; }
+    fi
+    [[ -z ${seen[$line]:-} ]] || { err "IPv$fam list line $n: duplicate $line"; return 1; }
+    seen[$line]=1
+    items+=("$line")
+  done <"$file"
+  (( ${#items[@]} >= min && ${#items[@]} <= max )) || {
+    err "IPv$fam list has ${#items[@]} ranges (expected $min to $max)"; return 1; }
+  eval "$arr=(\"\${items[@]}\")"
+}
+
+fetch_lists() {
+  if [[ -n $SOURCE_DIR ]]; then
+    cp -- "$SOURCE_DIR/ips-v4" "$WORK/ips-v4" && cp -- "$SOURCE_DIR/ips-v6" "$WORK/ips-v6" || {
+      err "cannot read ips-v4 / ips-v6 from $SOURCE_DIR"; return 1; }
+  else
+    local u f
+    for f in v4 v6; do
+      [[ $f == v4 ]] && u=$CF_V4_URL || u=$CF_V6_URL
+      if ! "$CURL" --fail --silent --show-error --proto '=https' --tlsv1.2 --max-time 15 \
+           --max-filesize 65536 -o "$WORK/ips-$f" "$u"; then
+        err "download failed: $u"; return 1
+      fi
+    done
+  fi
+  load_list "$WORK/ips-v4" 4 10 100 CF_V4 || return 1
+  load_list "$WORK/ips-v6" 6 5 100 CF_V6 || return 1
+}
+
+# ----------------------------------------------------------------------------------------------
+# UFW reading
+# ----------------------------------------------------------------------------------------------
+readonly RE_CF="^ufw allow from ([0-9a-f.:]+/[0-9]{1,3}) to any port (80|443) proto tcp comment 'Cloudflare'$"
+# Same address/port shape with any (or no) comment. ufw treats rules differing only in comment as
+# the same rule ("Rule updated"), so such a rule would be rewritten by our 'allow'. Detected up front.
+readonly RE_SAME_SHAPE="^ufw allow from ([0-9a-f.:]+(/[0-9]{1,3})?) to any port (80|443) proto tcp( comment '.*')?$"
+declare -A LIVE=()          # "range port" -> exact line, for Cloudflare-template rules
+declare -a UNMANAGED=()     # every other line of 'ufw show added', exactly as printed
+declare -A UNMANAGED_KEYS=()  # "range port" of unmanaged rules with the same shape (other comment)
+
+read_ufw() {
+  local out line first=1 key
+  LIVE=(); UNMANAGED=(); UNMANAGED_KEYS=()
+  out=$("$UFW" show added 2>&1) || { err "'ufw show added' failed: $out"; return 1; }
+  while IFS= read -r line; do
+    if (( first )); then
+      first=0
+      [[ $line == "Added user rules"* ]] || { err "unexpected 'ufw show added' output: $line"; return 1; }
+      continue
+    fi
+    [[ -z $line || $line == "(None)" ]] && continue
+    if [[ $line =~ $RE_CF ]]; then
+      key="${BASH_REMATCH[1]} ${BASH_REMATCH[2]}"
+      if ! valid_range "${BASH_REMATCH[1]}"; then
+        err "live UFW rule has an unusable range ($VALID_ERR): $line"; return 1
+      fi
+      [[ -z ${LIVE[$key]:-} ]] || { err "duplicate live UFW rule: $line"; return 1; }
+      LIVE[$key]=$line
+    else
+      UNMANAGED+=("$line")
+      [[ $line =~ $RE_SAME_SHAPE ]] && UNMANAGED_KEYS["${BASH_REMATCH[1]} ${BASH_REMATCH[3]}"]=1
+    fi
+  done <<<"$out"
+  (( first == 0 )) || { err "empty 'ufw show added' output"; return 1; }
+  return 0
+}
+
+unmanaged_snapshot() { printf '%s\n' "${UNMANAGED[@]}" | sort; }
+
+check_ufw_baseline() {
+  local st
+  st=$("$UFW" status verbose 2>&1) || { err "'ufw status verbose' failed"; return 1; }
+  grep -Eq '^Status: active$' <<<"$st"              || { err "ufw is not active"; return 1; }
+  grep -Eq '^Default: deny \(incoming\)' <<<"$st"     || { err "ufw default incoming policy is not deny"; return 1; }
+  grep -Eq '^22/tcp +ALLOW IN +Anywhere( |$)' <<<"$st" || { err "SSH rule 22/tcp (IPv4) not found; refusing to run"; return 1; }
+  grep -Eq '^22/tcp \(v6\) +ALLOW IN +Anywhere \(v6\)( |$)' <<<"$st" || { err "SSH rule 22/tcp (IPv6) not found; refusing to run"; return 1; }
+  grep -Eq '^IPV6=yes$' "$UFW_DEFAULTS" 2>/dev/null   || { err "IPV6=yes not set in $UFW_DEFAULTS"; return 1; }
+  grep -Eq '^DEFAULT_INPUT_POLICY="(DROP|REJECT)"$' "$UFW_DEFAULTS" 2>/dev/null || {
+    err "DEFAULT_INPUT_POLICY is not DROP/REJECT in $UFW_DEFAULTS"; return 1; }
+  return 0
+}
+
+# ----------------------------------------------------------------------------------------------
+# UFW changes: guarded, verified and journaled
+# ----------------------------------------------------------------------------------------------
+declare -A ALLOWED_SRC=()   # ranges this run may touch: validated Cloudflare list + recorded state
+declare -a JOURNAL=()       # "allow RANGE PORT" / "delete RANGE PORT", in the order they took effect
+
+# ufw_change OP RANGE PORT JOURNAL(1|0)
+ufw_change() {
+  local op=$1 src=$2 port=$3 record=$4 key="$2 $3"
+  if [[ $op != allow && $op != delete ]] || [[ $port != 80 && $port != 443 ]] ||
+     [[ -z ${ALLOWED_SRC[$src]:-} ]] || ! valid_range "$src"; then
+    err "refusing a UFW command outside the Cloudflare template: op='$op' range='$src' port='$port'"
+    return 2
+  fi
+  local -a args
+  if [[ $op == allow ]]; then
+    args=(allow from "$src" to any port "$port" proto tcp comment "$COMMENT")
+  else
+    args=(delete allow from "$src" to any port "$port" proto tcp comment "$COMMENT")
+  fi
+  read_ufw || return 1
+  local before_unmanaged before_count had=0 out rc
+  before_unmanaged=$(unmanaged_snapshot); before_count=${#LIVE[@]}
+  [[ -n ${LIVE[$key]:-} ]] && had=1
+  log "  ufw ${args[*]}"
+  out=$("$UFW" "${args[@]}" 2>&1); rc=$?
+  [[ -n $out ]] && log "    -> ${out//$'\n'/ | }"
+  if ! read_ufw; then
+    # Cannot tell what happened; rollback works from the pre-run snapshot, so this is safe.
+    (( record )) && JOURNAL+=("$op $src $port")
+    return 1
+  fi
+  local has=0
+  [[ -n ${LIVE[$key]:-} ]] && has=1
+  if (( record )); then
+    [[ $op == allow && $had == 0 && $has == 1 ]] && JOURNAL+=("allow $src $port")
+    [[ $op == delete && $had == 1 && $has == 0 ]] && JOURNAL+=("delete $src $port")
+  fi
+  if [[ $(unmanaged_snapshot) != "$before_unmanaged" ]]; then
+    crit "rules outside the Cloudflare template changed during: ufw ${args[*]}"
+    return 1
+  fi
+  if (( rc != 0 )); then err "ufw exited with $rc"; return 1; fi
+  if [[ $op == allow ]]; then
+    (( had == 0 && has == 1 && ${#LIVE[@]} == before_count + 1 )) || { err "rule was not added as expected"; return 1; }
+  else
+    (( had == 1 && has == 0 && ${#LIVE[@]} == before_count - 1 )) || { err "rule was not deleted as expected"; return 1; }
+  fi
+  return 0
+}
+
+# ----------------------------------------------------------------------------------------------
+# nginx
+# ----------------------------------------------------------------------------------------------
+render_geo() {
+  local r
+  printf '%s\n' "# Managed by rucek-cloudflare-update. Do not edit by hand; changes are overwritten." \
+                "# \$rucek_from_cf is 1 when the TCP peer (\$realip_remote_addr, i.e. before the real-IP" \
+                "# module replaces \$remote_addr) is Cloudflare or this server itself, otherwise 0." \
+                "geo \$realip_remote_addr \$rucek_from_cf {" \
+                "    default 0;" \
+                "    127.0.0.1/32 1;" \
+                "    ::1/128 1;"
+  for r in "$@"; do printf '    %s 1;\n' "$r"; done
+  printf '}\n'
+}
+
+render_realip() {
+  local r
+  printf '%s\n' "# Managed by rucek-cloudflare-update. Do not edit by hand; changes are overwritten." \
+                "# Included only by the rucek.display.mk server blocks."
+  for r in "$@"; do printf 'set_real_ip_from %s;\n' "$r"; done
+  printf '%s\n' "real_ip_header CF-Connecting-IP;" "real_ip_recursive off;"
+}
+
+BACKUP_DIR=""
+NGINX_BACKED_UP=0
+NGINX_TOUCHED=0
+STATE_BACKED_UP=0
+
+# Puts the state file saved at the start of an update back if it changed: temp file in the same
+# folder created with cp -p (keeps the original mode, owner and timestamps), then an atomic rename.
+restore_state() {
+  (( STATE_BACKED_UP )) || return 0
+  local saved="$BACKUP_DIR/managed-rules.txt" tmp
+  cmp -s -- "$saved" "$STATE_FILE" && return 0
+  tmp=$(mktemp "$STATE_DIR/.managed-rules.XXXXXX") || { crit "cannot restore the state file; previous version kept in $saved"; return 1; }
+  if cp -p -- "$saved" "$tmp" && mv -f -- "$tmp" "$STATE_FILE"; then
+    log "state file restored from $saved"
+    return 0
+  fi
+  rm -f -- "$tmp"
+  crit "cannot restore the state file; previous version kept in $saved"
+  return 1
+}
+
+# Test-only pause points (RUCEK_CF_TEST_HOOK is honoured only in test mode, never in production).
+test_hook() { if (( TEST_MODE )) && [[ -n ${RUCEK_CF_TEST_HOOK:-} ]]; then "$RUCEK_CF_TEST_HOOK" "$1"; fi; return 0; }
+
+make_backup_dir() {
+  [[ -n $BACKUP_DIR ]] && return 0
+  local ts
+  ts=$(date -u +%Y%m%dT%H%M%SZ)
+  BACKUP_DIR="$BACKUP_ROOT/$ts-$$"
+  mkdir -p -- "$BACKUP_DIR" && chmod 700 -- "$BACKUP_ROOT" "$BACKUP_DIR" || { err "cannot create $BACKUP_DIR"; return 1; }
+  "$UFW" show added >"$BACKUP_DIR/ufw-show-added.txt" 2>&1 || true
+  local f
+  for f in user.rules user6.rules; do
+    [[ -r $UFW_RULES_DIR/$f ]] && cp -p -- "$UFW_RULES_DIR/$f" "$BACKUP_DIR/$f"
+  done
+  log "Backup: $BACKUP_DIR"
+  # Keep $BACKUP_KEEP folders in total: this run's folder plus the $BACKUP_KEEP - 1 newest others
+  # (by name). This run's folder is excluded from pruning explicitly: it is NOT necessarily the
+  # newest by name (a clock that went backwards gives it an older timestamp than existing folders).
+  local -a others=()
+  local d i
+  while IFS= read -r d; do
+    [[ -n $d && ${d##*/} != "${BACKUP_DIR##*/}" ]] && others+=("$d")
+  done < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d -name '20*' | sort)
+  for (( i = 0; i < ${#others[@]} - (BACKUP_KEEP - 1); i++ )); do rm -rf -- "${others[i]}"; done
+  return 0
+}
+
+backup_nginx_once() {
+  (( NGINX_BACKED_UP )) && return 0
+  make_backup_dir || return 1
+  local f name
+  for f in "$NGINX_GEO" "$NGINX_REALIP"; do
+    name=$(basename -- "$f")
+    if [[ -e $f ]]; then cp -p -- "$f" "$BACKUP_DIR/$name" || return 1
+    else : >"$BACKUP_DIR/$name.absent"; fi
+  done
+  NGINX_BACKED_UP=1
+}
+
+# Atomic replace: temp file in the same folder, then rename.
+write_file() {
+  local dest=$1 content=$2 tmp
+  tmp=$(mktemp "$(dirname -- "$dest")/.rucek-cf.XXXXXX") || return 1
+  printf '%s' "$content" >"$tmp" && chmod 644 -- "$tmp" && mv -f -- "$tmp" "$dest" || { rm -f -- "$tmp"; return 1; }
+}
+
+nginx_test() {
+  local out
+  if out=$("$NGINX" -t 2>&1); then return 0; fi
+  err "nginx -t failed: ${out//$'\n'/ | }"
+  return 1
+}
+
+health_check() {
+  local i code
+  for (( i = 1; i <= HEALTH_TRIES; i++ )); do
+    code=$("$CURL" -sk -o /dev/null -w '%{http_code}' --max-time 10 \
+           --resolve "$HEALTH_HOST:443:127.0.0.1" "https://$HEALTH_HOST$HEALTH_PATH" 2>/dev/null)
+    [[ $code == 200 ]] && return 0
+    sleep "$HEALTH_DELAY"
+  done
+  err "health check https://$HEALTH_HOST$HEALTH_PATH via 127.0.0.1 failed (last status: ${code:-none})"
+  return 1
+}
+
+nginx_reload_checked() {
+  "$SYSTEMCTL" reload nginx || { err "systemctl reload nginx failed"; return 1; }
+  health_check
+}
+
+# Restores the geo/real-IP files saved by backup_nginx_once.
+restore_nginx() {
+  (( NGINX_BACKED_UP )) || return 0
+  local f name ok=0
+  for f in "$NGINX_GEO" "$NGINX_REALIP"; do
+    name=$(basename -- "$f")
+    if [[ -e $BACKUP_DIR/$name.absent ]]; then rm -f -- "$f"
+    else cp -p -- "$BACKUP_DIR/$name" "$f" || ok=1; fi
+  done
+  (( ok == 0 )) || { crit "could not restore nginx files from $BACKUP_DIR"; return 1; }
+  if ! nginx_test; then
+    crit "restored nginx config does not pass nginx -t; NOT reloading (running nginx keeps its last good config)"
+    return 1
+  fi
+  if (( NGINX_TOUCHED )); then
+    "$SYSTEMCTL" reload nginx || { crit "reload after restore failed"; return 1; }
+  fi
+  log "nginx files restored from $BACKUP_DIR"
+  return 0
+}
+
+# apply_nginx RANGES... : writes both files, tests, reloads, health-checks. Restores on failure.
+apply_nginx() {
+  local geo realip
+  geo=$(render_geo "$@"); geo+=$'\n'
+  realip=$(render_realip "$@"); realip+=$'\n'
+  if [[ -f $NGINX_GEO && -f $NGINX_REALIP && "$(cat -- "$NGINX_GEO"; printf x)" == "${geo}x" &&
+        "$(cat -- "$NGINX_REALIP"; printf x)" == "${realip}x" ]]; then
+    return 0
+  fi
+  backup_nginx_once || return 1
+  log "  nginx: writing $NGINX_GEO and $NGINX_REALIP ($# ranges)"
+  write_file "$NGINX_GEO" "$geo" && write_file "$NGINX_REALIP" "$realip" || { err "cannot write nginx files"; restore_nginx; return 1; }
+  nginx_test || { restore_nginx; return 1; }
+  NGINX_TOUCHED=1
+  nginx_reload_checked || { restore_nginx; return 1; }
+  return 0
+}
+
+display_hashes() {
+  local f
+  for f in $DISPLAY_FILES; do
+    if [[ -e $f ]]; then sha256sum -- "$f"; else echo "absent $f"; fi
+  done
+}
+
+# ----------------------------------------------------------------------------------------------
+# Rollback
+# ----------------------------------------------------------------------------------------------
+ORIG_LIVE_SORTED=""
+ORIG_UNMANAGED=""
+
+# Rollback is driven by the snapshot taken before any change, not by the journal: a command
+# interrupted by a signal may have taken effect without being journaled. Live Cloudflare-template
+# rules are compared with the snapshot; missing ones are re-added first (restores access), then
+# rules this run added are deleted. Only template commands for allowed ranges are possible.
+rollback() {
+  trap '' INT TERM HUP   # never re-enter
+  local failed=0 k r p
+  local -A orig=()
+  local -a readd=() extra=()
+  log "ROLLBACK: restoring the Cloudflare UFW rules to their state before this run (${#JOURNAL[@]} change(s) recorded)"
+  if read_ufw; then
+    while IFS= read -r k; do [[ -n $k ]] && orig[$k]=1; done <<<"$ORIG_LIVE_SORTED"
+    for k in "${!orig[@]}"; do [[ -z ${LIVE[$k]:-} ]] && readd+=("$k"); done
+    for k in "${!LIVE[@]}"; do [[ -z ${orig[$k]:-} ]] && extra+=("$k"); done
+    log "  re-add ${#readd[@]}, remove ${#extra[@]}"
+    if (( ${#readd[@]} )); then mapfile -t readd < <(printf '%s\n' "${readd[@]}" | sort); fi
+    if (( ${#extra[@]} )); then mapfile -t extra < <(printf '%s\n' "${extra[@]}" | sort); fi
+    for k in "${readd[@]}"; do read -r r p <<<"$k"; ufw_change allow "$r" "$p" 0 || { crit "rollback step failed: allow $r $p"; failed=1; }; done
+    for k in "${extra[@]}"; do read -r r p <<<"$k"; ufw_change delete "$r" "$p" 0 || { crit "rollback step failed: delete $r $p"; failed=1; }; done
+  else
+    failed=1
+  fi
+  restore_nginx || failed=1
+  restore_state || failed=1
+  if (( STATE_BACKED_UP )) && ! cmp -s -- "$BACKUP_DIR/managed-rules.txt" "$STATE_FILE"; then
+    crit "state file differs from before this run"; failed=1
+  fi
+  if read_ufw; then
+    if [[ $(printf '%s\n' "${!LIVE[@]}" | sort) != "$ORIG_LIVE_SORTED" ]]; then
+      crit "Cloudflare UFW rules differ from before this run"; failed=1
+    fi
+    if [[ $(unmanaged_snapshot) != "$ORIG_UNMANAGED" ]]; then
+      crit "rules outside the Cloudflare template differ from before this run (this tool never changes them; check 'ufw status numbered' NOW)"
+      failed=1
+    fi
+  else
+    failed=1
+  fi
+  if (( failed )); then
+    crit "rollback incomplete. Backups of the previous state: $BACKUP_DIR (ufw-show-added.txt, user.rules, user6.rules, nginx files, managed-rules.txt)"
+    exit 3
+  fi
+  log "ROLLBACK complete: UFW rules, nginx files and the state file are as before this run"
+  exit 1
+}
+
+# ----------------------------------------------------------------------------------------------
+# State
+# ----------------------------------------------------------------------------------------------
+declare -A STATE=()
+
+read_state() {
+  STATE=()
+  [[ -f $STATE_FILE ]] || return 1
+  local line n=0 r p
+  while IFS= read -r line || [[ -n $line ]]; do
+    n=$((n + 1))
+    [[ -z $line || $line == \#* ]] && continue
+    read -r r p <<<"$line"
+    if [[ $line != "$r $p" || ( $p != 80 && $p != 443 ) ]] || ! valid_range "$r"; then
+      err "state file $STATE_FILE line $n is invalid: $line"; exit 1
+    fi
+    STATE["$r $p"]=1
+  done <"$STATE_FILE"
+  return 0
+}
+
+write_state() {
+  local tmp k
+  tmp=$(mktemp "$STATE_DIR/.managed-rules.XXXXXX") || return 1
+  {
+    echo "# Managed by rucek-cloudflare-update: UFW rules (range port) this tool owns."
+    for k in "$@"; do echo "$k"; done | sort
+  } >"$tmp" && chmod 600 -- "$tmp" && mv -f -- "$tmp" "$STATE_FILE" || { rm -f -- "$tmp"; return 1; }
+}
+
+# ----------------------------------------------------------------------------------------------
+# Shared preparation for dry-run / adopt / update
+# ----------------------------------------------------------------------------------------------
+declare -a DESIRED=() ADD=() REMOVE=() FOREIGN=() MISSING_STATE=()
+
+prepare() {
+  check_ufw_baseline || exit 1
+  nginx_test || { err "nginx -t fails before any change; fix nginx first"; exit 1; }
+  fetch_lists || exit 1
+  read_ufw || exit 1
+  ORIG_LIVE_SORTED=$(printf '%s\n' "${!LIVE[@]}" | sort)
+  ORIG_UNMANAGED=$(unmanaged_snapshot)
+
+  local r p k
+  DESIRED=()
+  for r in "${CF_V4[@]}" "${CF_V6[@]}"; do
+    ALLOWED_SRC[$r]=1
+    for p in 80 443; do DESIRED+=("$r $p"); done
+  done
+}
+
+summarize_live() {
+  local k r p v4r=0 v6r=0 v4=0 v6=0 incomplete=0
+  local -A ranges=()
+  for k in "${!LIVE[@]}"; do
+    read -r r p <<<"$k"
+    ranges[$r]=$(( ${ranges[$r]:-0} + 1 ))
+    if [[ $r == *:* ]]; then v6=$((v6 + 1)); else v4=$((v4 + 1)); fi
+  done
+  for r in "${!ranges[@]}"; do
+    if [[ $r == *:* ]]; then v6r=$((v6r + 1)); else v4r=$((v4r + 1)); fi
+    (( ranges[$r] == 2 )) || incomplete=$((incomplete + 1))
+  done
+  log "  Cloudflare-template rules: ${#LIVE[@]} = ${#ranges[@]} ranges"
+  log "     IPv4: $v4r ranges / $v4 rules    IPv6: $v6r ranges / $v6 rules"
+  log "     complete pairs (80+443): $(( ${#ranges[@]} - incomplete ))   incomplete: $incomplete"
+  log "  Other rules (never touched): ${#UNMANAGED[@]} line(s) in 'ufw show added':"
+  local u
+  for u in "${UNMANAGED[@]}"; do log "     $u"; done
+}
+
+compute_plan() {   # needs STATE loaded (may be empty for adopt / dry-run)
+  local k
+  local -A want=()
+  ADD=(); REMOVE=(); FOREIGN=(); MISSING_STATE=()
+  for k in "${DESIRED[@]}"; do want[$k]=1; [[ -z ${LIVE[$k]:-} ]] && ADD+=("$k"); done
+  for k in "${!LIVE[@]}"; do
+    if [[ -n ${want[$k]:-} ]]; then continue; fi
+    if [[ -n ${STATE[$k]:-} ]]; then REMOVE+=("$k"); else FOREIGN+=("$k"); fi
+  done
+  for k in "${!STATE[@]}"; do [[ -z ${LIVE[$k]:-} ]] && MISSING_STATE+=("$k"); done
+  if (( ${#ADD[@]} )); then mapfile -t ADD < <(printf '%s\n' "${ADD[@]}" | sort); fi
+  if (( ${#REMOVE[@]} )); then mapfile -t REMOVE < <(printf '%s\n' "${REMOVE[@]}" | sort); fi
+  if (( ${#FOREIGN[@]} )); then mapfile -t FOREIGN < <(printf '%s\n' "${FOREIGN[@]}" | sort); fi
+  find_conflicts
+}
+
+count_ranges() { local k r p; local -A s=(); for k in "$@"; do read -r r p <<<"$k"; s[$r]=1; done; echo "${#s[@]}"; }
+
+print_plan() {
+  local k r p
+  log "Planned UFW: add ${#ADD[@]} rule(s), delete ${#REMOVE[@]} rule(s)"
+  for k in "${ADD[@]}"; do read -r r p <<<"$k"; log "     ufw allow from $r to any port $p proto tcp comment '$COMMENT'"; done
+  for k in "${REMOVE[@]}"; do read -r r p <<<"$k"; log "     ufw delete allow from $r to any port $p proto tcp comment '$COMMENT'"; done
+  if (( ${#FOREIGN[@]} )); then
+    log "Cloudflare-tagged rules that are neither in the official list nor recorded as managed:"
+    for k in "${FOREIGN[@]}"; do log "     ${LIVE[$k]}"; done
+  fi
+  if (( ${#CONFLICTS[@]} )); then
+    log "Conflicts: a rule with the same range and port but a different comment already exists"
+    log "(ufw would rewrite its comment instead of adding a rule):"
+    for k in "${CONFLICTS[@]}"; do log "     $k"; done
+  fi
+}
+
+declare -a CONFLICTS=()
+find_conflicts() { local k; CONFLICTS=(); for k in "${ADD[@]}"; do [[ -n ${UNMANAGED_KEYS[$k]:-} ]] && CONFLICTS+=("$k"); done; }
+
+# ----------------------------------------------------------------------------------------------
+# Modes
+# ----------------------------------------------------------------------------------------------
+mode_dry_run() {
+  log "rucek-cloudflare-update $VERSION  mode=dry-run  (nothing will be changed)"
+  prepare
+  log "Pre-checks: ufw active, default incoming deny, IPV6=yes, SSH 22/tcp (v4) and (v6) present, nginx -t ok"
+  log "Download: ips-v4 ${#CF_V4[@]} ranges, ips-v6 ${#CF_V6[@]} ranges, validation ok"
+  log "Live UFW:"
+  summarize_live
+  if read_state; then log "State file: ${#STATE[@]} managed rules recorded"; else log "State file: not present (run --adopt first)"; fi
+  compute_plan
+  print_plan
+  local geo realip
+  geo=$(render_geo "${CF_V4[@]}" "${CF_V6[@]}"); realip=$(render_realip "${CF_V4[@]}" "${CF_V6[@]}")
+  for f in "$NGINX_GEO" "$NGINX_REALIP"; do
+    if [[ ! -e $f ]]; then log "Planned nginx: create $f"
+    elif [[ $f == "$NGINX_GEO" && "$(cat -- "$f")" != "$geo" ]] || [[ $f == "$NGINX_REALIP" && "$(cat -- "$f")" != "$realip" ]]; then
+      log "Planned nginx: update $f"
+    else log "Planned nginx: $f unchanged"; fi
+  done
+  if [[ ! -f $STATE_FILE ]]; then
+    if (( ${#ADD[@]} == 0 && ${#FOREIGN[@]} == 0 )); then
+      log "Result: live rules equal the official list; --adopt would record ${#DESIRED[@]} rules and run no UFW commands."
+    else
+      log "Result: live rules differ from the official list; --adopt would refuse."
+    fi
+  fi
+  exit 0
+}
+
+mode_adopt() {
+  log "rucek-cloudflare-update $VERSION  mode=adopt"
+  [[ ! -e $STATE_FILE ]] || { err "already adopted ($STATE_FILE exists)"; exit 2; }
+  prepare
+  summarize_live
+  compute_plan
+  if (( ${#ADD[@]} || ${#REMOVE[@]} || ${#FOREIGN[@]} )); then
+    err "live 'Cloudflare' rules do not exactly equal the official list x ports 80,443. Nothing changed."
+    print_plan
+    exit 2
+  fi
+  local before after
+  before=$(display_hashes)
+  acquire_state_dir || exit 1
+  # From here on, an interruption puts both nginx files back to their pre-adopt state.
+  trap 'adopt_abort' INT TERM HUP
+  apply_nginx "${CF_V4[@]}" "${CF_V6[@]}" || { err "nginx step failed; nothing recorded"; exit 1; }
+  after=$(display_hashes)
+  [[ $before == "$after" ]] || warn "display.mk files changed during this run (not by this tool)"
+  write_state "${DESIRED[@]}" || { err "cannot write $STATE_FILE"; adopt_abort; }
+  trap - INT TERM HUP
+  log "Adopted ${#DESIRED[@]} UFW rules (no UFW commands run). State: $STATE_FILE"
+  exit 0
+}
+
+# Interrupted (or failed) adopt: undo the nginx files only. Adopt never runs UFW commands.
+adopt_abort() {
+  trap '' INT TERM HUP   # never re-enter
+  if [[ -e $STATE_FILE ]]; then
+    # Adopt refuses to start when the state file exists, so this run wrote it: it had finished.
+    log "Interrupted after the state was recorded; adopt is complete, nothing to undo."
+    exit 0
+  fi
+  crit "adopt interrupted or failed before the state was recorded; restoring the nginx files"
+  if (( ! NGINX_BACKED_UP )); then log "No nginx file had been changed yet."; exit 1; fi
+  if restore_nginx; then
+    log "nginx files are back to their state before this run (backup: $BACKUP_DIR). Nothing was recorded."
+    exit 1
+  fi
+  crit "could not fully restore the nginx files; the previous versions are kept in $BACKUP_DIR"
+  exit 3
+}
+
+acquire_state_dir() {
+  mkdir -p -- "$STATE_DIR" && chmod 700 -- "$STATE_DIR" || { err "cannot create $STATE_DIR"; return 1; }
+}
+
+mode_update() {
+  log "rucek-cloudflare-update $VERSION  mode=update"
+  read_state || { err "no state file; run --adopt first"; exit 2; }
+  prepare
+  local k r p inject=0
+  for k in "${!STATE[@]}"; do read -r r p <<<"$k"; ALLOWED_SRC[$r]=1; done
+  (( TEST_MODE )) && [[ -n ${RUCEK_CF_TEST_INJECT:-} ]] && inject=1
+  compute_plan
+  print_plan
+  if (( ${#FOREIGN[@]} )); then
+    err "unexpected Cloudflare-tagged UFW rules found; resolve them by hand. Nothing changed."
+    exit 2
+  fi
+  if (( ${#CONFLICTS[@]} )); then
+    err "a rule to be added conflicts with an existing rule that has a different comment; resolve by hand. Nothing changed."
+    exit 2
+  fi
+  local add_r rem_r
+  add_r=$(count_ranges "${ADD[@]}"); rem_r=$(count_ranges "${REMOVE[@]}")
+  if (( ! ACCEPT_LARGE && (add_r > MAX_ADD_RANGES || rem_r > MAX_REMOVE_RANGES) )); then
+    err "change too large ($add_r ranges to add, $rem_r to remove; limits $MAX_ADD_RANGES / $MAX_REMOVE_RANGES). Nothing changed. Review, then re-run with --accept-large-change."
+    exit 2
+  fi
+
+  # Ranges for nginx during phase A: everything currently allowed plus everything new.
+  local -a final_ranges=("${CF_V4[@]}" "${CF_V6[@]}") phase_a_ranges=()
+  local -A seen=()
+  for r in "${final_ranges[@]}"; do seen[$r]=1; phase_a_ranges+=("$r"); done
+  for k in "${REMOVE[@]}"; do read -r r p <<<"$k"; [[ -n ${seen[$r]:-} ]] || { seen[$r]=1; phase_a_ranges+=("$r"); }; done
+
+  if (( ${#ADD[@]} == 0 && ${#REMOVE[@]} == 0 && inject == 0 )) && [[ -f $NGINX_GEO && -f $NGINX_REALIP ]] &&
+     [[ "$(cat -- "$NGINX_GEO")" == "$(render_geo "${final_ranges[@]}")" ]] &&
+     [[ "$(cat -- "$NGINX_REALIP")" == "$(render_realip "${final_ranges[@]}")" ]]; then
+    if [[ $(printf '%s\n' "${!STATE[@]}" | sort) != "$(printf '%s\n' "${DESIRED[@]}" | sort)" ]]; then
+      write_state "${DESIRED[@]}" || { err "cannot write state"; exit 1; }
+      log "State file re-synced with the live rules (no UFW or nginx changes)."
+    fi
+    log "No changes needed."
+    exit 0
+  fi
+
+  local before after
+  before=$(display_hashes)
+  make_backup_dir || exit 1
+  # The previous state file is part of the transaction: saved now (mode, owner, timestamps kept),
+  # put back by rollback if the new one was already written.
+  cp -p -- "$STATE_FILE" "$BACKUP_DIR/managed-rules.txt" || { err "cannot back up $STATE_FILE"; exit 1; }
+  STATE_BACKED_UP=1
+  # From here on, an interruption (e.g. SIGTERM from the systemd timeout) rolls back.
+  trap 'crit "interrupted"; rollback' INT TERM HUP
+
+  # Test-only hook: lets the suite prove that the template guard stops a forbidden command.
+  if (( inject )); then
+    local iop isrc iport
+    read -r iop isrc iport <<<"$RUCEK_CF_TEST_INJECT"
+    log "TEST: injecting '$RUCEK_CF_TEST_INJECT'"
+    ufw_change "$iop" "$isrc" "$iport" 1 || rollback
+  fi
+
+  log "Phase A: add new rules, then nginx with old + new ranges"
+  for k in "${ADD[@]}"; do read -r r p <<<"$k"; ufw_change allow "$r" "$p" 1 || rollback; done
+  apply_nginx "${phase_a_ranges[@]}" || rollback
+
+  log "Phase B: nginx with the new list only, then delete obsolete rules"
+  apply_nginx "${final_ranges[@]}" || rollback
+  for k in "${REMOVE[@]}"; do read -r r p <<<"$k"; ufw_change delete "$r" "$p" 1 || rollback; done
+
+  # Final verification.
+  check_ufw_baseline || rollback
+  read_ufw || rollback
+  local want_sorted live_sorted
+  want_sorted=$(printf '%s\n' "${DESIRED[@]}" | sort)
+  live_sorted=$(printf '%s\n' "${!LIVE[@]}" | sort)
+  [[ $live_sorted == "$want_sorted" ]] || { err "final Cloudflare rules do not equal the official list"; rollback; }
+  [[ $(unmanaged_snapshot) == "$ORIG_UNMANAGED" ]] || { crit "other rules changed"; rollback; }
+  after=$(display_hashes)
+  [[ $before == "$after" ]] || { err "display.mk files changed during this run"; rollback; }
+
+  write_state "${DESIRED[@]}" || { err "cannot write state"; rollback; }
+  test_hook after-state-write
+  printf '%s\n' "${JOURNAL[@]}" >"$BACKUP_DIR/journal.log" 2>/dev/null
+  # Transaction committed: from here a signal no longer rolls back a finished, consistent update.
+  trap - INT TERM HUP
+  log "Done: added ${#ADD[@]} rule(s), deleted ${#REMOVE[@]} rule(s). State updated."
+  exit 0
+}
+
+vhost_backup_path() {
+  if [[ -n $RESTORE_FROM ]]; then echo "$RESTORE_FROM/rucek.display.mk.vhost"; return; fi
+  find "$BACKUP_ROOT" -mindepth 2 -maxdepth 2 -name rucek.display.mk.vhost 2>/dev/null | sort | tail -n 1
+}
+
+guard_check() {   # a request that does not come from Cloudflare must get 403
+  local own code
+  own=$("$IP" -4 -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+  [[ -n $own ]] || { err "cannot determine this server's public IPv4 for the guard check"; return 1; }
+  code=$("$CURL" -sk -o /dev/null -w '%{http_code}' --max-time 10 -H 'CF-Connecting-IP: 1.2.3.4' \
+         --resolve "$HEALTH_HOST:443:$own" "https://$HEALTH_HOST$HEALTH_PATH" 2>/dev/null)
+  [[ $code == 403 ]] || { err "guard check: direct request via $own returned ${code:-nothing}, expected 403"; return 1; }
+  log "  guard check: direct request with a fake CF-Connecting-IP via $own -> 403"
+}
+
+mode_install_guard() {
+  log "rucek-cloudflare-update $VERSION  mode=install-vhost-guard"
+  [[ -f $STATE_FILE && -f $NGINX_GEO && -f $NGINX_REALIP ]] || { err "run --adopt first (state and nginx files missing)"; exit 2; }
+  [[ -f $AUDITED_VHOST && -f $GUARDED_VHOST ]] || { err "audited/guarded vhost files missing in $SHARE_DIR"; exit 1; }
+  nginx_test || exit 1
+  if cmp -s -- "$VHOST" "$GUARDED_VHOST"; then
+    # Still prove it is active: a previous run may have been interrupted before the reload.
+    if health_check && guard_check; then log "Guarded vhost already installed and active."; exit 0; fi
+    err "guarded vhost is on disk but not active; check 'sudo nginx -t' and reload nginx"
+    exit 1
+  fi
+  if ! cmp -s -- "$VHOST" "$AUDITED_VHOST"; then
+    err "$VHOST differs from the audited version; refusing to replace it. Differences:"
+    diff -u -- "$AUDITED_VHOST" "$VHOST" >&2
+    exit 2
+  fi
+  local before after tmp
+  before=$(display_hashes)
+  acquire_state_dir && make_backup_dir || exit 1
+  cp -p -- "$VHOST" "$BACKUP_DIR/rucek.display.mk.vhost" || { err "cannot back up the vhost"; exit 1; }
+  # An interruption at any point after this (even after nginx has loaded the guarded vhost) puts
+  # the previous vhost back AND reloads, so the running config matches the file on disk.
+  trap 'crit "interrupted; restoring the previous vhost"; guard_restore' INT TERM HUP
+  tmp=$(mktemp "$(dirname -- "$VHOST")/.rucek-cf.XXXXXX") || guard_restore
+  cp -- "$GUARDED_VHOST" "$tmp" && chmod 644 -- "$tmp" && mv -f -- "$tmp" "$VHOST" || { rm -f -- "$tmp"; err "cannot install the vhost"; guard_restore; }
+  log "  installed guarded vhost (backup: $BACKUP_DIR/rucek.display.mk.vhost)"
+  if nginx_test && "$SYSTEMCTL" reload nginx && health_check && guard_check; then
+    after=$(display_hashes)
+    if [[ $before == "$after" ]]; then trap - INT TERM HUP; log "Guard installed."; exit 0; fi
+    err "display.mk files changed during this run"
+  fi
+  err "guard installation failed; restoring the previous vhost"
+  guard_restore
+}
+
+# guard_restore [BACKUP]: puts the backed-up vhost back (default: this run's guard backup),
+# validates it, reloads nginx and health-checks. Never deletes the backup. Exit 1 when restored
+# cleanly, exit 3 (with the backup path) when anything fails.
+guard_restore() {
+  trap '' INT TERM HUP   # never re-enter
+  local backup="${1:-$BACKUP_DIR/rucek.display.mk.vhost}"
+  if ! cp -p -- "$backup" "$VHOST"; then
+    crit "could not restore $VHOST. Restore it by hand from $backup, then run 'nginx -t' and reload nginx."
+    exit 3
+  fi
+  if ! nginx_test; then
+    crit "restored vhost does not pass nginx -t; NOT reloading. The running nginx keeps its loaded config. Backup kept: $backup"
+    exit 3
+  fi
+  if ! "$SYSTEMCTL" reload nginx; then
+    crit "reload after restoring the vhost failed; the running nginx may still use the guarded config. Backup kept: $backup"
+    exit 3
+  fi
+  if ! health_check; then
+    crit "health check fails after restoring the vhost. Backup kept: $backup"
+    exit 3
+  fi
+  log "Previous vhost restored and reloaded (backup kept: $backup)."
+  exit 1
+}
+
+# The installed audited copy is used as a fallback only if it is a regular, non-empty file with
+# exactly the audited content.
+audited_fallback_ok() {
+  local f=$1 sum
+  [[ -f $f && ! -L $f && -s $f ]] || { err "fallback $f is missing, empty, a symlink or not a regular file"; return 1; }
+  sum=$(sha256sum -- "$f" | cut -c1-64)
+  [[ $sum == "$AUDITED_VHOST_SHA256" ]] || {
+    err "fallback $f does not match the audited vhost (sha256 $sum, expected $AUDITED_VHOST_SHA256); refusing to use it"
+    return 1
+  }
+}
+
+mode_restore_vhost() {
+  log "rucek-cloudflare-update $VERSION  mode=restore-vhost"
+  [[ -f $VHOST ]] || { err "$VHOST not found"; exit 1; }
+  local src tmp
+  src=$(vhost_backup_path)
+  if [[ -n $src && -e $src ]]; then
+    [[ -f $src && -s $src ]] || { err "vhost backup $src is empty or not a regular file; not using it"; exit 1; }
+    log "  source: retained vhost backup $src"
+  elif [[ -n $RESTORE_FROM ]]; then
+    err "no vhost backup in $RESTORE_FROM"; exit 1   # an explicit --from never falls back
+  else
+    src=$AUDITED_VHOST
+    log "  no retained vhost backup; falling back to the installed audited copy $src"
+    audited_fallback_ok "$src" || exit 1
+  fi
+  # Stage the source next to the vhost first: creating this run's backup folder below prunes old
+  # folders, which may include the one $src is in.
+  tmp=$(mktemp "$(dirname -- "$VHOST")/.rucek-cf.XXXXXX") || { err "cannot create a temporary file"; exit 1; }
+  cp -- "$src" "$tmp" && chmod 644 -- "$tmp" || { rm -f -- "$tmp"; err "cannot stage $src"; exit 1; }
+  # Save the vhost being replaced, so a failed restore can put it back. Named differently from
+  # guard backups so vhost_backup_path never picks it as a restore source.
+  local prev
+  acquire_state_dir && make_backup_dir || { rm -f -- "$tmp"; exit 1; }
+  prev="$BACKUP_DIR/rucek.display.mk.vhost-before-restore"
+  cp -p -- "$VHOST" "$prev" || { rm -f -- "$tmp"; err "cannot back up the current vhost"; exit 1; }
+  trap 'crit "interrupted; putting back the vhost that was active before --restore-vhost"; guard_restore "$prev"' INT TERM HUP
+  mv -f -- "$tmp" "$VHOST" || { rm -f -- "$tmp"; err "cannot replace $VHOST (unchanged)"; trap - INT TERM HUP; exit 1; }
+  log "  restored $VHOST from $src (previous vhost saved as $prev)"
+  if nginx_test && "$SYSTEMCTL" reload nginx && health_check; then
+    trap - INT TERM HUP
+    log "Vhost restored."
+    exit 0
+  fi
+  err "restored vhost failed nginx -t, reload or health check; putting back the previous vhost"
+  guard_restore "$prev"
+}
+
+# ----------------------------------------------------------------------------------------------
+acquire_lock
+case $MODE in
+  dry-run)       mode_dry_run ;;
+  adopt)         mode_adopt ;;
+  update)        mode_update ;;
+  install-guard) mode_install_guard ;;
+  restore-vhost) mode_restore_vhost ;;
+esac

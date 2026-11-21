@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Test-only pause point called by the updater (test mode only) as: hook <point>.
+# At FAKE_HOOK_PAUSE_AT it records what the state file looks like right then, signals readiness
+# and waits, so the test can deliver SIGTERM at exactly this point.
+set -u
+echo "hook $*" >>"$FAKE_DIR/calls.log"
+if [[ -n ${FAKE_HOOK_PAUSE_AT:-} && $1 == "$FAKE_HOOK_PAUSE_AT" ]]; then
+  cp "$RUCEK_CF_STATE_DIR/managed-rules.txt" "$FAKE_DIR/state-at-pause"
+  : >"$FAKE_DIR/paused"
+  sleep 4
+fi
+exit 0

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Fake ufw emulating ufw 0.36.2 for the commands rucek-cloudflare-update uses:
+#   show added | status verbose | allow from R to any port P proto tcp [comment C]
+#   delete allow from R to any port P proto tcp [comment C]
+# Matching follows backend_iptables.py / common.py: same source+port+proto with the same comment is
+# an exact match; a different comment matches for delete only when the delete has no comment; an
+# allow that differs only in comment rewrites the existing rule's comment ("Rule updated").
+set -u
+. "$(dirname "$0")/_lib.sh"
+R="$FAKE_DIR/ufw-rules"
+echo "ufw $*" >>"$FAKE_DIR/calls.log"
+SSH="ufw allow 22/tcp comment 'SSH'"
+
+case "${1:-}" in
+  show)
+    [[ ${2:-} == added ]] || { echo "ERROR: fake supports only 'show added'"; exit 1; }
+    echo "Added user rules (see 'ufw status' for running firewall):"
+    if [[ -s $R ]]; then cat "$R"; else echo "(None)"; fi
+    exit 0 ;;
+  status)
+    if [[ ${FAKE_UFW_INACTIVE:-0} == 1 ]]; then echo "Status: inactive"; exit 0; fi
+    echo "Status: active"
+    echo "Logging: on (low)"
+    echo "Default: deny (incoming), allow (outgoing), deny (routed)"
+    echo "New profiles: skip"
+    echo
+    printf '%-26s %-11s %s\n' To Action From
+    printf '%-26s %-11s %s\n' -- ------ ----
+    v6=()
+    while IFS= read -r l; do
+      if [[ $l == "$SSH" ]]; then
+        [[ ${FAKE_UFW_NO_SSH_V4:-0} == 1 ]] || printf '%-26s %-11s %-26s %s\n' 22/tcp "ALLOW IN" Anywhere "# SSH"
+        [[ ${FAKE_UFW_NO_SSH_V6:-0} == 1 ]] || v6+=("$(printf '%-26s %-11s %-26s %s' '22/tcp (v6)' 'ALLOW IN' 'Anywhere (v6)' '# SSH')")
+      elif [[ $l =~ ^ufw\ allow\ from\ ([^ ]+)\ to\ any\ port\ ([0-9]+)\ proto\ tcp(\ comment\ \'(.*)\')?$ ]]; then
+        s="$(printf '%-26s %-11s %-26s %s' "${BASH_REMATCH[2]}/tcp" "ALLOW IN" "${BASH_REMATCH[1]}" "${BASH_REMATCH[4]:+# ${BASH_REMATCH[4]}}")"
+        if [[ ${BASH_REMATCH[1]} == *:* ]]; then v6+=("$s"); else echo "$s"; fi
+      else
+        printf '%-26s %-11s %s\n' "(other)" "ALLOW IN" "$l"
+      fi
+    done < <(cat "$R" 2>/dev/null)
+    for l in "${v6[@]}"; do echo "$l"; done
+    exit 0 ;;
+esac
+
+op=${1:-}; shift || true
+if [[ $op == delete ]]; then
+  [[ ${1:-} == allow ]] || { echo "ERROR: fake supports only 'delete allow ...'"; exit 1; }
+  shift
+fi
+[[ $op == allow || $op == delete ]] || { echo "ERROR: unsupported command: $op $*"; exit 1; }
+if [[ ${1:-} != from || ${3:-} != to || ${4:-} != any || ${5:-} != port || ${7:-} != proto || ${8:-} != tcp ]]; then
+  echo "ERROR: unsupported rule syntax: $*"; exit 1
+fi
+src=$2 port=$6 comment=""
+if (( $# == 10 )) && [[ $9 == comment ]]; then comment=${10}
+elif (( $# != 8 )); then echo "ERROR: unsupported rule syntax: $*"; exit 1; fi
+
+n=$(counter ufw_mut)
+spec="$op $src $port"
+if fails UFW "$n" || [[ ${FAKE_UFW_FAIL_SPEC:-} == "$spec" ]]; then echo "ERROR: injected failure ($spec)"; exit 1; fi
+if [[ ${FAKE_UFW_NOOP_SPEC:-} == "$spec" ]]; then echo "Rule added"; exit 0; fi   # claims success, changes nothing
+
+pause() { if [[ -n ${FAKE_UFW_PAUSE_ON:-} && $n == "$FAKE_UFW_PAUSE_ON" ]]; then : >"$FAKE_DIR/paused"; sleep 4; fi; }
+base="ufw allow from $src to any port $port proto tcp"
+full=$base; [[ -n $comment ]] && full+=" comment '$comment'"
+mapfile -t lines < <(cat "$R" 2>/dev/null)
+v6=""; [[ $src == *:* ]] && v6=" (v6)"
+save() { if (( ${#lines[@]} )); then printf '%s\n' "${lines[@]}" >"$R"; else : >"$R"; fi; }
+strip() { local l=$1; echo "${l% comment \'*\'}"; }
+
+if [[ $op == allow ]]; then
+  for i in "${!lines[@]}"; do [[ ${lines[i]} == "$full" ]] && { echo "Skipping adding existing rule$v6"; exit 0; }; done
+  for i in "${!lines[@]}"; do
+    if [[ $(strip "${lines[i]}") == "$base" ]]; then lines[i]=$full; save; echo "Rule updated$v6"; exit 0; fi
+  done
+  lines+=("$full"); save; echo "Rule added$v6"; pause; exit 0
+fi
+
+for i in "${!lines[@]}"; do
+  if [[ ${lines[i]} == "$full" ]] || { [[ -z $comment ]] && [[ $(strip "${lines[i]}") == "$base" ]]; }; then
+    unset 'lines[i]'
+    if [[ ${FAKE_UFW_EVIL:-} == delete-ssh ]]; then   # simulates a misbehaving ufw
+      for j in "${!lines[@]}"; do [[ ${lines[j]} == "$SSH" ]] && unset 'lines[j]'; done
+    fi
+    lines=("${lines[@]}"); save; echo "Rule deleted$v6"; exit 0
+  fi
+done
+echo "Could not delete non-existent rule$v6"
+exit 0

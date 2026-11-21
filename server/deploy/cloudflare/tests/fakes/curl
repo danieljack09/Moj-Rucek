@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Fake curl: Cloudflare list downloads from $FAKE_CF_DIR, health checks via 127.0.0.1, guard check via other IPs.
+set -u
+. "$(dirname "$0")/_lib.sh"
+echo "curl $*" >>"$FAKE_DIR/calls.log"
+out="" resolve="" url=""
+while (( $# )); do
+  case $1 in
+    -o) out=$2; shift ;;
+    --resolve) resolve=$2; shift ;;
+    -w|--max-time|-H|--proto|--max-filesize) shift ;;
+    -*) ;;
+    *) url=$1 ;;
+  esac
+  shift
+done
+case $url in
+  */ips-v4|*/ips-v6)
+    [[ ${FAKE_CURL_DOWNLOAD_FAIL:-0} == 1 ]] && { echo "curl: (22) The requested URL returned error: 503" >&2; exit 22; }
+    cp "$FAKE_CF_DIR/${url##*/}" "$out"; exit 0 ;;
+esac
+if [[ $resolve == *:127.0.0.1 ]]; then
+  n=$(counter health)
+  pause_if HEALTH "$n"
+  if fails HEALTH "$n"; then printf 502; else printf 200; fi
+else
+  printf '%s' "${FAKE_GUARD_CODE:-403}"
+fi
+exit 0
