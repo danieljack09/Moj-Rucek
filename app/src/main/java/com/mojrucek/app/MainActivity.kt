@@ -8,7 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
-import com.mojrucek.app.ui.navigation.MojRucekNavHost
+import com.mojrucek.app.ui.auth.AuthGate
 import com.mojrucek.app.ui.theme.MojRucekTheme
 
 class MainActivity : ComponentActivity() {
@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
                         permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-                MojRucekNavHost(container = container)
+                AuthGate(container = container)
             }
         }
     }

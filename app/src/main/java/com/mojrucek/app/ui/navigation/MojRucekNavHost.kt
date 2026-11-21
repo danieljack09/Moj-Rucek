@@ -30,6 +30,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mojrucek.app.di.AppContainer
+import com.mojrucek.app.ui.auth.AccountCard
+import com.mojrucek.app.ui.auth.AccountViewModel
 import com.mojrucek.app.ui.components.GenericViewModelFactory
 import com.mojrucek.app.ui.home.HomeScreen
 import com.mojrucek.app.ui.home.HomeViewModel
@@ -206,7 +208,10 @@ fun MojRucekNavHost(container: AppContainer) {
                         container.catalogSyncRepository
                     )
                 })
-                SettingsScreen(vm, onBack = { navController.popBackStack() })
+                val accountVm: AccountViewModel = viewModel(factory = GenericViewModelFactory {
+                    AccountViewModel(container.authRepository, container.accountSwitchRepository)
+                })
+                SettingsScreen(vm, onBack = { navController.popBackStack() }, accountCard = { AccountCard(accountVm) })
             }
 
             composable(Dest.RecipeNew.route) {

@@ -49,6 +49,14 @@ class BackupRepository(
         return json.encodeToString(BackupData.serializer(), data)
     }
 
+    /** Counts of what is in the database right now, in the same shape as a backup's summary. */
+    suspend fun currentSummary(): BackupSummary = BackupSummary(
+        ingredientCount = ingredientRepository.getAllOnce().size,
+        recipeCount = recipeRepository.getAllWithIngredientsOnce().size,
+        shoppingItemCount = shoppingListRepository.getAllOnce().size,
+        weeklyPlanCount = plannerDao.getAllWithMealsOnce().size
+    )
+
     /** Parses and validates [jsonText] without changing anything, so the UI can show a confirmation first. */
     fun validate(jsonText: String): ImportResult = try {
         val data = json.decodeFromString(BackupData.serializer(), jsonText)

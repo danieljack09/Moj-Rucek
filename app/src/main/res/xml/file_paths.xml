@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="backups" path="backups/" />
     <external-cache-path name="external_backups" path="backups/" />
+    <!-- Verified snapshots made before switching to an existing account (AccountSwitchRepository). -->
+    <files-path name="account_switch" path="account-switch/" />
 </paths>

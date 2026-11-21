@@ -16,6 +16,10 @@ androidxTestExtJunit = "1.2.1"
 espressoCore = "3.6.1"
 kotlinxCoroutinesTest = "1.8.1"
 googleServices = "4.4.2"
+# Accounts (Phase 2). Versions chosen to stay compatible with compileSdk 34 / AGP 8.5.
+firebaseBom = "33.7.0"
+credentials = "1.3.0"
+googleId = "1.1.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +48,12 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutinesTest" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "kotlinxCoroutines" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleId" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

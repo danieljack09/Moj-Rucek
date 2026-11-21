@@ -1,7 +1,9 @@
 package com.mojrucek.app.di
 
 import android.content.Context
+import com.mojrucek.app.auth.AuthRepository
 import com.mojrucek.app.data.AppDatabase
+import com.mojrucek.app.repository.AccountSwitchRepository
 import com.mojrucek.app.repository.BackupRepository
 import com.mojrucek.app.repository.CatalogSyncRepository
 import com.mojrucek.app.repository.IngredientRepository
@@ -37,4 +39,6 @@ class AppContainer(context: Context) {
         database.plannerDao(),
         settingsRepository
     )
+    val authRepository = AuthRepository(context.applicationContext)
+    val accountSwitchRepository = AccountSwitchRepository(context.applicationContext, database, backupRepository)
 }

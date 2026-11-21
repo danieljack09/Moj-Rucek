@@ -69,4 +69,11 @@ interface RecipeDao {
 
     @Query("DELETE FROM recipes")
     suspend fun deleteAll()
+
+    /** Recipes that exist only on this device (the user's own). Server catalog recipes are kept. */
+    @Query("DELETE FROM recipes WHERE serverId IS NULL")
+    suspend fun deleteLocalOnly()
+
+    @Query("UPDATE recipes SET isFavorite = 0 WHERE isFavorite = 1")
+    suspend fun clearFavorites()
 }

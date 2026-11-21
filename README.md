@@ -72,6 +72,7 @@ Never commit `google-services.json`, service-account files, keystores (`*.jks`, 
 - **Пазарење** — manual add, quantity/unit/category, purchased checkbox with separate purchased/unpurchased sections grouped by category, duplicate-combining, "Додади во домашни намирници" on purchase (with an explicit "no, bought for today" option that leaves inventory untouched), clear-purchased.
 - **Sunday reminder** — a self-rescheduling WorkManager job fires at the time you set in Поставки, with a POST_NOTIFICATIONS request on first launch (Android 13+) and a manual "Генерирај листа за пазарење" button that works with notifications off.
 - **Поставки** (reached from the gear icon on Почетна, not a 6th bottom-nav tab, per the 5-tab spec) — default household servings, reminder on/off and time, and JSON export (shares a `.json` file via the system share sheet) / import (file picker → validates → shows a summary → asks to confirm before overwriting anything).
+- **Accounts (Phase 2, Stage A — not production-ready yet)** — Welcome screen with *Продолжи со Google* / *Продолжи како гостин* / *Подоцна*; a guest upgrades by **linking** Google to the same Firebase user (same uid, local data untouched). If that Google account already belongs to another user, the app makes and verifies a local snapshot, asks for explicit confirmation, signs in to the existing account and only then clears the local user tables (never merges). Email/password is not offered yet. See the limitations below.
 - **Catalog from the server** — the ingredient list and recipes are managed in the admin panel (`server/`, live at rucek.display.mk/admin) and synced into the app on start or via Settings → Синхронизирај; the app ships with no hardcoded recipes.
 
 ## Design decisions worth knowing about
@@ -81,6 +82,16 @@ Never commit `google-services.json`, service-account files, keystores (`*.jks`, 
 - **All core calculations are plain Kotlin with no Android dependency** (`domain/usecase/*`): unit conversion, recipe-vs-inventory matching, serving scaling, weekly shopping-list generation, week/Sunday date math. That's what the unit tests in `app/src/test/` exercise directly, no emulator required. A couple of behaviors that only make sense against a real database (negative-quantity prevention on cook, duplicate-free shopping-list regeneration) are instrumented tests in `app/src/androidTest/` instead.
 - **No DI framework** — `di/AppContainer.kt` is a half-dozen-line hand-wired container. Hilt/Koin would be the obvious upgrade if the app grows, but felt like unnecessary ceremony (and one more dependency-version risk I couldn't verify compiles here) for a single-user app.
 - **Room entities double as the JSON export/import schema** (`data/BackupData.kt`) via `kotlinx.serialization` — one less set of mapping code to maintain, at the cost of the export format being tied to the internal schema. Fine for a personal backup file; would need a dedicated DTO layer if this ever became a shared/public format.
+
+## Accounts: temporary limitations (Stage A)
+
+These are known and intentional for now; they are **not** acceptable for a production release and are resolved in later stages:
+
+- **Local data is not tied to an account.** All user data lives in the phone's Room database without an owner. Signing out keeps it on the phone, and whoever signs in next (another Google account or a new guest) sees and edits the same data. Data ownership (Room v4: owner id + ownership state, "keep on this phone" / "export" choices for unowned data) comes with the server stage.
+- **Nothing is stored on the server yet.** The backend does not know about users; the 14-day guest policy and FREE-plan rules are not enforced anywhere until the server stage verifies Firebase ID tokens.
+- **Abandoned guests.** A guest account left behind (after switching to an existing Google account, or after uninstalling) is never cleaned up in Firebase.
+- **Snapshots accumulate.** The verified snapshots made before an account switch (`files/account-switch/`, app-private, not in Android backups) are never deleted by the app.
+- **Restoring a snapshot replaces everything.** Settings → *Вчитај од датотека* overwrites all local data with the file; there is no merge.
 
 ## If something doesn't compile
 
