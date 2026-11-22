@@ -14,34 +14,21 @@ import kotlinx.coroutines.launch
 
 data class ShoppingUiState(
     val isLoading: Boolean = true,
-    val unpurchasedByCategory: Map<IngredientCategory, List<ShoppingListItem>> = emptyMap(),
-    val purchased: List<ShoppingListItem> = emptyList()
-) {
-    val allSelected: Boolean
-        get() {
-            val totalCount = unpurchasedByCategory.values.sumOf { it.size } + purchased.size
-            return totalCount > 0 && unpurchasedByCategory.isEmpty()
-        }
-}
+    val unpurchasedByCategory: Map<IngredientCategory, List<ShoppingListItem>> = emptyMap()
+)
 
 class ShoppingViewModel(private val repository: ShoppingListRepository) : ViewModel() {
 
     val uiState: StateFlow<ShoppingUiState> = repository.observeAll().map { items ->
         ShoppingUiState(
             isLoading = false,
-            unpurchasedByCategory = items.filter { !it.isPurchased }
-                .groupBy { it.category }
-                .toSortedMap(compareBy { it.displayName }),
-            purchased = items.filter { it.isPurchased }
+            unpurchasedByCategory = items.groupBy { it.category }
+                .toSortedMap(compareBy { it.displayName })
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ShoppingUiState())
 
     fun addManualItem(name: String, quantity: Double, unit: MeasurementUnit, category: IngredientCategory) {
         viewModelScope.launch { repository.addOrCombine(name, quantity, unit, category) }
-    }
-
-    fun togglePurchased(item: ShoppingListItem) {
-        viewModelScope.launch { repository.setPurchased(item, !item.isPurchased) }
     }
 
     fun addToInventory(item: ShoppingListItem) {
@@ -54,14 +41,5 @@ class ShoppingViewModel(private val repository: ShoppingListRepository) : ViewMo
 
     fun delete(item: ShoppingListItem) {
         viewModelScope.launch { repository.delete(item) }
-    }
-
-    fun clearPurchased() {
-        viewModelScope.launch { repository.clearPurchased() }
-    }
-
-    fun toggleSelectAll() {
-        val target = !uiState.value.allSelected
-        viewModelScope.launch { repository.setAllPurchased(target) }
     }
 }

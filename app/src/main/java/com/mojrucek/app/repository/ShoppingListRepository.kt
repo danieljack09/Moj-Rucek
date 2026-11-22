@@ -94,10 +94,7 @@ class ShoppingListRepository(
 
     suspend fun delete(item: ShoppingListItem) = dao.delete(item)
 
-    suspend fun setPurchased(item: ShoppingListItem, purchased: Boolean) =
-        dao.update(item.copy(isPurchased = purchased, isHandled = if (!purchased) false else item.isHandled))
-
-    /** "Додај во домашни намирници": merges the purchased item into inventory and marks it handled. */
+    /** "Додај во домашни намирници": merges the item into inventory and removes it from the list. */
     suspend fun addPurchasedItemToInventory(item: ShoppingListItem) {
         val existing = ingredientRepository.findExistingByName(item.name)
         if (existing != null) {
@@ -113,17 +110,13 @@ class ShoppingListRepository(
                 notes = null
             )
         }
-        dao.update(item.copy(isHandled = true))
+        dao.delete(item)
     }
 
     /** The user bought it for immediate use and does not want it added to the home inventory. */
     suspend fun keepWithoutAddingToInventory(item: ShoppingListItem) {
-        dao.update(item.copy(isHandled = true))
+        dao.delete(item)
     }
-
-    suspend fun clearPurchased() = dao.clearPurchased()
-
-    suspend fun setAllPurchased(purchased: Boolean) = dao.setAllPurchased(purchased)
 
     suspend fun getAllOnce(): List<ShoppingListItem> = dao.getAllOnce()
 

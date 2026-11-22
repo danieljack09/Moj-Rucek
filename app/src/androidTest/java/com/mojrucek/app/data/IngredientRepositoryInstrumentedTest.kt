@@ -40,7 +40,7 @@ class IngredientRepositoryInstrumentedTest {
     }
 
     @Test
-    fun adjustQuantity_neverGoesBelowZero() = runBlocking {
+    fun adjustQuantity_removesIngredientWhenItReachesZero() = runBlocking {
         val id = repository.insert(
             name = "Ориз",
             category = IngredientCategory.ZITARICI_I_TESTENINI,
@@ -54,8 +54,7 @@ class IngredientRepositoryInstrumentedTest {
 
         repository.adjustQuantity(ingredient, -500.0)
 
-        val updated = repository.getById(id)!!
-        assertEquals(0.0, updated.quantity, 0.0001)
+        assertEquals(null, repository.getById(id))
     }
 
     @Test

@@ -22,13 +22,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,14 +60,7 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Пазарење") },
-                actions = {
-                    if (state.purchased.isNotEmpty()) {
-                        TextButton(onClick = viewModel::clearPurchased) { Text("Исчисти купени") }
-                    }
-                }
-            )
+            TopAppBar(title = { Text("Пазарење") })
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
@@ -78,7 +68,7 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
             }
         }
     ) { padding ->
-        if (state.unpurchasedByCategory.isEmpty() && state.purchased.isEmpty()) {
+        if (state.unpurchasedByCategory.isEmpty()) {
             EmptyState(
                 message = "Листата за пазарење е празна.",
                 modifier = Modifier.fillMaxSize().padding(padding)
@@ -91,21 +81,6 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (state.unpurchasedByCategory.isNotEmpty() || state.purchased.isNotEmpty()) {
-                item(key = "select_all") {
-                    FilledTonalButton(
-                        onClick = viewModel::toggleSelectAll,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    ) {
-                        Text(if (state.allSelected) "Деселектирај ги сите" else "Селектирај ги сите")
-                    }
-                }
-            }
-
             state.unpurchasedByCategory.forEach { (category, items) ->
                 item(key = "header_${category.name}") {
                     Text(category.displayName, style = MaterialTheme.typography.titleMedium)
@@ -113,28 +88,6 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
                 items(items, key = { it.id }) { item ->
                     ShoppingRow(
                         item = item,
-                        onToggle = { viewModel.togglePurchased(item) },
-                        onMarkWithInventory = {
-                            viewModel.togglePurchased(item)
-                            viewModel.addToInventory(item.copy(isPurchased = true))
-                        },
-                        onMarkWithoutInventory = {
-                            viewModel.togglePurchased(item)
-                            viewModel.keepWithoutAdding(item.copy(isPurchased = true))
-                        },
-                        onDelete = { viewModel.delete(item) }
-                    )
-                }
-            }
-
-            if (state.purchased.isNotEmpty()) {
-                item(key = "purchased_header") {
-                    Text("Купено", style = MaterialTheme.typography.titleMedium)
-                }
-                items(state.purchased, key = { it.id }) { item ->
-                    ShoppingRow(
-                        item = item,
-                        onToggle = { viewModel.togglePurchased(item) },
                         onMarkWithInventory = { viewModel.addToInventory(item) },
                         onMarkWithoutInventory = { viewModel.keepWithoutAdding(item) },
                         onDelete = { viewModel.delete(item) }
@@ -158,7 +111,6 @@ fun ShoppingScreen(viewModel: ShoppingViewModel) {
 @Composable
 private fun ShoppingRow(
     item: ShoppingListItem,
-    onToggle: () -> Unit,
     onMarkWithInventory: () -> Unit,
     onMarkWithoutInventory: () -> Unit,
     onDelete: () -> Unit
@@ -170,9 +122,6 @@ private fun ShoppingRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (item.isPurchased) {
-                    Checkbox(checked = true, onCheckedChange = { onToggle() })
-                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(item.name, style = MaterialTheme.typography.bodyLarge)
                     Text(

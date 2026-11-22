@@ -77,10 +77,17 @@ class IngredientRepository(private val dao: IngredientDao) {
     suspend fun setQuantity(id: Long, quantity: Double) =
         dao.updateQuantity(id, quantity.coerceAtLeast(0.0))
 
-    suspend fun adjustQuantity(ingredient: Ingredient, delta: Double) =
-        dao.updateQuantity(ingredient.id, (ingredient.quantity + delta).coerceAtLeast(0.0))
+    /** Decreasing to zero (or below) removes the ingredient instead of leaving an empty entry behind. */
+    suspend fun adjustQuantity(ingredient: Ingredient, delta: Double) {
+        val newQuantity = (ingredient.quantity + delta).coerceAtLeast(0.0)
+        if (newQuantity <= 0.0) {
+            dao.delete(ingredient)
+        } else {
+            dao.updateQuantity(ingredient.id, newQuantity)
+        }
+    }
 
-    suspend fun markFinished(ingredient: Ingredient) = dao.updateQuantity(ingredient.id, 0.0)
+    suspend fun markFinished(ingredient: Ingredient) = dao.delete(ingredient)
 
     suspend fun getAllOnce(): List<Ingredient> = dao.getAllOnce()
 

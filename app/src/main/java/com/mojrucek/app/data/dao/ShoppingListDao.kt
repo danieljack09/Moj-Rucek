@@ -30,12 +30,6 @@ interface ShoppingListDao {
     @Delete
     suspend fun delete(item: ShoppingListItem)
 
-    @Query("DELETE FROM shopping_list_items WHERE isPurchased = 1")
-    suspend fun clearPurchased()
-
-    @Query("UPDATE shopping_list_items SET isPurchased = :purchased, isHandled = CASE WHEN :purchased THEN isHandled ELSE 0 END")
-    suspend fun setAllPurchased(purchased: Boolean)
-
     @Query("SELECT * FROM shopping_list_items")
     suspend fun getAllOnce(): List<ShoppingListItem>
 
