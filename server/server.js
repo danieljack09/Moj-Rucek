@@ -5,7 +5,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const store = require('./db');
-const { HttpError } = store;
+const { HttpError } = require('./lib/http-error');
+const { createGoogleCertKeyCache, createJwksKeyCache } = require('./lib/jwt');
+const { createFirebaseIdTokenVerifier } = require('./lib/firebase-auth');
+const { createAppCheckVerifier } = require('./lib/app-check');
+const { createUserStore } = require('./users');
+const { createIdentity, clientAddress } = require('./identity');
 const { INGREDIENT_CATEGORIES, RECIPE_CATEGORIES, UNITS } = require('./constants');
 
 const PORT = Number(process.env.PORT || 3100);
@@ -20,6 +25,40 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const COOKIE = 'rucek_admin';
 
 const ADMIN_HTML = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'));
+
+// ---------- accounts (Firebase identity) ----------
+// Off until FIREBASE_PROJECT_ID is set: /api/session and /api/me then answer 503, everything else works as before.
+//   FIREBASE_PROJECT_ID      e.g. the Firebase project id (needed to verify sign-in tokens)
+//   FIREBASE_PROJECT_NUMBER  needed for App Check only
+//   APPCHECK_MODE            off | monitor | enforce   (default: monitor if the project number is set, else off)
+//   ALLOWED_PROVIDERS        comma list, default "anonymous,google.com"
+const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID || '').trim();
+const FIREBASE_PROJECT_NUMBER = (process.env.FIREBASE_PROJECT_NUMBER || '').trim();
+let APPCHECK_MODE = (process.env.APPCHECK_MODE || (FIREBASE_PROJECT_NUMBER ? 'monitor' : 'off')).trim();
+if (!['off', 'monitor', 'enforce'].includes(APPCHECK_MODE)) {
+  console.error(`APPCHECK_MODE must be off, monitor or enforce (got "${APPCHECK_MODE}"); using off.`);
+  APPCHECK_MODE = 'off';
+}
+if (APPCHECK_MODE !== 'off' && !FIREBASE_PROJECT_NUMBER) {
+  console.error('APPCHECK_MODE needs FIREBASE_PROJECT_NUMBER; App Check stays off.');
+  APPCHECK_MODE = 'off';
+}
+const ALLOWED_PROVIDERS = (process.env.ALLOWED_PROVIDERS || 'anonymous,google.com').split(',').map((v) => v.trim()).filter(Boolean);
+
+const users = createUserStore(store.db);
+const identity = createIdentity({
+  idTokenVerifier: FIREBASE_PROJECT_ID
+    ? createFirebaseIdTokenVerifier({
+        projectId: FIREBASE_PROJECT_ID,
+        getKey: createGoogleCertKeyCache().getKey,
+        allowedProviders: ALLOWED_PROVIDERS,
+      })
+    : null,
+  appCheckVerifier: APPCHECK_MODE !== 'off'
+    ? createAppCheckVerifier({ projectNumber: FIREBASE_PROJECT_NUMBER, getKey: createJwksKeyCache().getKey })
+    : null,
+  appCheckMode: APPCHECK_MODE,
+});
 
 // ---------- auth ----------
 
@@ -56,9 +95,7 @@ const isAuthed = (req) => tokenOk(readCookie(req, COOKIE));
 
 // 5 failed logins per 15 minutes per client address.
 const attempts = new Map();
-function clientIp(req) {
-  return req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown';
-}
+const clientIp = clientAddress;
 function loginBlocked(ip) {
   const a = attempts.get(ip);
   if (!a || a.resetAt < Date.now()) return false;
@@ -171,6 +208,18 @@ async function handle(req, res) {
     return send(res, 200, store.catalogSince(since));
   }
 
+  // The app's account endpoints. Authorization: Bearer <Firebase ID token>.
+  if (p === '/api/session' && m === 'POST') {
+    const who = await identity.authenticate(req, clientAddress(req));
+    return send(res, 200, users.publicShape(users.upsertSession(who)));
+  }
+  if (p === '/api/me' && m === 'GET') {
+    const who = await identity.authenticate(req, clientAddress(req));
+    const row = users.findByUid(who.uid);
+    if (!row) throw new HttpError(404, 'Нема отворена сесија. Повикај /api/session.');
+    return send(res, 200, users.publicShape(row));
+  }
+
   if (p === '/admin' && m === 'GET') {
     return send(res, 200, ADMIN_HTML, {
       'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
@@ -235,4 +284,9 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, HOST, () => console.log(`Moj Rucek catalog server on http://${HOST}:${PORT}`));
+server.listen(PORT, HOST, () => {
+  console.log(`Moj Rucek catalog server on http://${HOST}:${PORT}`);
+  console.log(identity.configured
+    ? `Accounts: on (project ${FIREBASE_PROJECT_ID}), providers: ${ALLOWED_PROVIDERS.join(', ')}, App Check: ${APPCHECK_MODE}`
+    : 'Accounts: off (set FIREBASE_PROJECT_ID to enable /api/session and /api/me)');
+});

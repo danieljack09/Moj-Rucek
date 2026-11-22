@@ -3,6 +3,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
+const { HttpError } = require('./lib/http-error');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'catalog.db');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -283,14 +284,9 @@ function catalogSince(since) {
   return { serverTime, ingredients, recipes };
 }
 
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
 
 module.exports = {
+  db,
   HttpError,
   listIngredients, saveIngredient, deleteIngredient,
   listRecipes, getRecipe, saveRecipe, deleteRecipe,

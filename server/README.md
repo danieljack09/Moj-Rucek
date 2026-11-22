@@ -25,7 +25,7 @@ Run from this machine (PowerShell). `displaymk` is the SSH alias in `~/.ssh/conf
 ```powershell
 # 1. Upload (to the home folder; no root needed)
 ssh displaymk "rm -rf ~/rucek-server-upload && mkdir ~/rucek-server-upload"
-scp -r server.js db.js constants.js package.json public deploy displaymk:~/rucek-server-upload/
+scp -r server.js db.js identity.js users.js constants.js seed-ingredients.json package.json lib public deploy displaymk:~/rucek-server-upload/
 ```
 
 Then on the server (`ssh displaymk`), these need sudo:
@@ -34,7 +34,7 @@ Then on the server (`ssh displaymk`), these need sudo:
 # 2. User, folders, files
 sudo useradd --system --home /opt/rucek-server --shell /usr/sbin/nologin rucek
 sudo mkdir -p /opt/rucek-server/data
-sudo cp -r ~/rucek-server-upload/{server.js,db.js,constants.js,package.json,public} /opt/rucek-server/
+sudo cp -r ~/rucek-server-upload/{server.js,db.js,identity.js,users.js,constants.js,seed-ingredients.json,package.json,lib,public} /opt/rucek-server/
 sudo chown -R rucek:rucek /opt/rucek-server
 
 # 3. Secrets (pick your own admin password; the secret is random)
@@ -59,8 +59,39 @@ sudo certbot --nginx -d rucek.display.mk
 To update later: re-upload, copy the changed files to `/opt/rucek-server/`, then
 `sudo systemctl restart rucek-server`.
 
+## Accounts (Firebase identity)
+
+The app signs users in with Firebase (guest = anonymous, or Google). This server only **verifies** those
+sign-in tokens and keeps its own user records; it never stores passwords or Google data.
+
+- `POST /api/session` — header `Authorization: Bearer <Firebase ID token>`. Creates the user on the first
+  call, returns `{ userId, kind, plan, createdAt, guestStartedAt, guestExpiresAt, serverTime }`.
+  A guest's 14 days start at this first successful call. Linking Google keeps the same user and removes the expiry.
+- `GET /api/me` — same data; 404 if `/api/session` was never called for that user.
+- Errors: 401 invalid/missing token (the reason is only in the server log), 429 rate limit
+  (60/min per client address, 30/min per user), 503 accounts not configured or Google's signing keys unreachable
+  (the server fails closed, it never accepts a token it could not verify).
+- Tokens are verified with `node:crypto` only (RS256 against Google's published keys, `iss`/`aud` = your project,
+  `exp`/`iat`/`auth_time`, provider must be `anonymous` or `google.com`; `custom` tokens are refused).
+
+Turn it on by adding to `/etc/rucek-server.env` and restarting (`sudo systemctl restart rucek-server`):
+
+```
+FIREBASE_PROJECT_ID=<your Firebase project id>
+# optional, for App Check:
+FIREBASE_PROJECT_NUMBER=<your Firebase project number>
+APPCHECK_MODE=monitor        # off | monitor (log only, the default once the number is set) | enforce
+# optional: ALLOWED_PROVIDERS=anonymous,google.com
+```
+
+Without `FIREBASE_PROJECT_ID` the two endpoints answer 503 and everything else works as before. The server's
+outbound HTTPS to `googleapis.com` must be allowed (keys are cached for hours).
+
+Run the tests (no dependencies, no network needed): `cd server && npm test`.
+
 ## Notes
 
 - Enum values (categories, units) must match the Android enums; they live in `constants.js`.
 - Logins are rate-limited (5 failures / 15 min per address) and sessions last 12 hours.
 - The admin panel is not linked from anywhere; `noindex` is set.
+- Behind Cloudflare the client address comes from `CF-Connecting-IP` (trusted because the firewall only lets Cloudflare reach nginx); the admin login limiter and the account rate limits use it.
