@@ -34,6 +34,9 @@
   td.actions { text-align:right; white-space:nowrap; }
   .line { display:grid; grid-template-columns:3fr 1fr 1.2fr 2fr auto; gap:8px; margin-bottom:8px; }
   @media (max-width:640px) { .line { grid-template-columns:1fr 1fr; } }
+  .step-line { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .step-line .step-num { flex:none; min-width:70px; font-size:13px; color:var(--muted); }
+  .step-line input { flex:1; }
   .msg { padding:10px 12px; border-radius:8px; margin-bottom:12px; }
   .msg.err { background:#fbeceb; color:var(--danger); }
   .msg.ok { background:#e8f3ec; color:var(--accent); }
@@ -263,6 +266,20 @@ function renderRecipeForm(r) {
   };
   (r?.ingredients?.length ? r.ingredients : [{}]).forEach(addLine);
 
+  const steps = h('div');
+  const renumberSteps = () => {
+    [...steps.children].forEach((row, i) => { row.querySelector('.step-num').textContent = 'Чекор ' + (i + 1); });
+  };
+  const addStep = (text = '') => {
+    const row = h('div', { class: 'step-line' },
+      h('span', { class: 'step-num' }, ''),
+      h('input', { name: 'step', placeholder: 'Опис на чекорот', value: text }),
+      h('button', { type: 'button', class: 'danger', onclick: () => { row.remove(); renumberSteps(); } }, '✕'));
+    steps.append(row);
+    renumberSteps();
+  };
+  (r?.instructionSteps?.length ? r.instructionSteps : ['']).forEach(addStep);
+
   const catOptions = { '': '— без категорија —', ...meta.recipeCategories };
 
   const form = h('form', { class: 'card', onsubmit: async (e) => {
@@ -276,7 +293,7 @@ function renderRecipeForm(r) {
       cookTimeMinutes: f.cook.value,
       category: f.category.value,
       tags: f.tags.value.split(',').map((t) => t.trim()).filter(Boolean),
-      instructionSteps: f.steps.value.split('\n').map((s) => s.trim()).filter(Boolean),
+      instructionSteps: [...steps.children].map((row) => row.querySelector('[name=step]').value.trim()).filter(Boolean),
       notes: f.notes.value,
       ingredients: [...lines.children].map((row) => ({
         name: row.querySelector('[name=iname]').value,
@@ -302,7 +319,8 @@ function renderRecipeForm(r) {
     h('label', {}, 'Тагови (одделени со запирка)'), h('input', { name: 'tags', value: (r?.tags ?? []).join(', ') }),
     h('label', {}, 'Состојки (за бројот на порции погоре)'), lines,
     h('button', { type: 'button', onclick: () => addLine() }, '+ Состојка'),
-    h('label', {}, 'Чекори (еден по ред)'), h('textarea', { name: 'steps' }, (r?.instructionSteps ?? []).join('\n')),
+    h('label', {}, 'Чекори'), steps,
+    h('button', { type: 'button', onclick: () => addStep() }, '+ Чекор'),
     h('label', {}, 'Белешки'), h('input', { name: 'notes', maxlength: 1000, value: r?.notes ?? '' }),
     h('p', {}, h('button', { class: 'primary', type: 'submit' }, 'Зачувај'), ' ',
       h('button', { type: 'button', onclick: renderRecipes }, 'Откажи')));
