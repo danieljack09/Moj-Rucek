@@ -2,6 +2,8 @@ package com.mojrucek.app.ui.auth
 
 import android.content.ClipData
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,6 +25,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,7 +34,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.mojrucek.app.auth.AccountKind
+import com.mojrucek.app.repository.SaveOutcome
 import com.mojrucek.app.repository.VerifiedSnapshot
+import com.mojrucek.app.ui.components.backupSaverFor
+import com.mojrucek.app.ui.components.savedBackupMessage
+import com.mojrucek.app.ui.components.suggestedBackupFileName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Account section of Settings: shows the account and offers linking (guest) or sign-out (Google). */
 @Composable
@@ -128,6 +138,22 @@ private fun SwitchAccountDialogs(step: SwitchStep?, viewModel: AccountViewModel)
         )
         is SwitchStep.Confirm -> {
             var understood by remember(step) { mutableStateOf(false) }
+            // Extra copy for the user. The verified internal snapshot already exists and is what the
+            // switch relies on; cancelling or failing here changes nothing about the switch.
+            val scope = rememberCoroutineScope()
+            var saveMessage by remember(step) { mutableStateOf<String?>(null) }
+            val saver = remember(step) {
+                backupSaverFor(context) { withContext(Dispatchers.IO) { step.snapshot.file.readText(Charsets.UTF_8) } }
+            }
+            val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+                if (uri != null) scope.launch {
+                    saveMessage = when (val outcome = saver.save(uri)) {
+                        SaveOutcome.Cancelled -> null
+                        is SaveOutcome.Saved -> savedBackupMessage(context, uri)
+                        is SaveOutcome.Failed -> "Копијата НЕ е зачувана на уредот.\n\n${outcome.reason}"
+                    }
+                }
+            }
             AlertDialog(
                 onDismissRequest = viewModel::cancelSwitch,
                 properties = noDismiss,
@@ -141,9 +167,16 @@ private fun SwitchAccountDialogs(step: SwitchStep?, viewModel: AccountViewModel)
                                 "Препорачуваме да ја зачуваш и надвор од телефонот. Подоцна можеш да ја вчиташ " +
                                 "преку Поставки → Резервна копија."
                         )
-                        OutlinedButton(onClick = { shareSnapshot(context, step.snapshot) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Сподели / зачувај копија")
+                        OutlinedButton(
+                            onClick = { saveLauncher.launch(suggestedBackupFileName()) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Зачувај на уредот")
                         }
+                        OutlinedButton(onClick = { shareSnapshot(context, step.snapshot) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Сподели копија")
+                        }
+                        saveMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         Row(
                             Modifier.fillMaxWidth().clickable { understood = !understood },
                             verticalAlignment = Alignment.CenterVertically

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.mojrucek.app.repository.ImportResult
+import com.mojrucek.app.ui.components.suggestedBackupFileName
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -85,6 +87,12 @@ fun SettingsScreen(
                 is ImportResult.InvalidFile -> pendingImportSummary = result.reason
             }
         }
+    }
+
+    // System file creator (Storage Access Framework): the user picks the place, no storage permission.
+    // Cancelling returns null, which the ViewModel ignores without showing an error.
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        viewModel.saveBackupTo(uri)
     }
 
     LaunchedEffect(state.exportedJson) {
@@ -214,11 +222,24 @@ fun SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Резервна копија", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Извези ги сите намирници, рецепти, планови и листи во JSON датотека, или вчитај претходно извезена датотека.",
+                        "Зачувај ги сите намирници, рецепти, планови и листи во датотека на телефонот, " +
+                            "или сподели ја копијата. Подоцна можеш да ја вчиташ назад.",
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    Button(
+                        onClick = { saveLauncher.launch(suggestedBackupFileName()) },
+                        enabled = !state.isSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (state.isSaving) "Се зачувува…" else "Зачувај на уредот")
+                    }
+                    Text(
+                        "Ќе избереш каде да се зачува, на пример во Преземања или Документи.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     OutlinedButton(onClick = viewModel::exportData, modifier = Modifier.fillMaxWidth()) {
-                        Text("Извези податоци")
+                        Text("Сподели копија")
                     }
                     OutlinedButton(onClick = { importLauncher.launch("application/json") }, modifier = Modifier.fillMaxWidth()) {
                         Text("Вчитај од датотека")
@@ -245,6 +266,15 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { pendingImportSummary = null; pendingImportText = null }) { Text("Откажи") }
             }
+        )
+    }
+
+    state.saveMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::clearSaveMessage,
+            title = { Text("Резервна копија") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::clearSaveMessage) { Text("Во ред") } }
         )
     }
 

@@ -1,6 +1,7 @@
 package com.mojrucek.app.ui.settings
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.mojrucek.app.data.entity.AppSettings
@@ -9,7 +10,10 @@ import com.mojrucek.app.repository.BackupRepository
 import com.mojrucek.app.repository.CatalogSyncRepository
 import com.mojrucek.app.repository.SyncResult
 import com.mojrucek.app.repository.ImportResult
+import com.mojrucek.app.repository.SaveOutcome
 import com.mojrucek.app.repository.SettingsRepository
+import com.mojrucek.app.ui.components.backupSaverFor
+import com.mojrucek.app.ui.components.savedBackupMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +26,9 @@ data class SettingsUiState(
     val exportedJson: String? = null,
     val importMessage: String? = null,
     val isSyncing: Boolean = false,
-    val syncMessage: String? = null
+    val syncMessage: String? = null,
+    val isSaving: Boolean = false,
+    val saveMessage: String? = null
 )
 
 class SettingsViewModel(
@@ -36,8 +42,10 @@ class SettingsViewModel(
     private val importMessage = MutableStateFlow<String?>(null)
     private val isSyncing = MutableStateFlow(false)
     private val syncMessage = MutableStateFlow<String?>(null)
+    private val isSaving = MutableStateFlow(false)
+    private val saveMessage = MutableStateFlow<String?>(null)
 
-    val uiState: StateFlow<SettingsUiState> = combine(
+    private val baseState = combine(
         settingsRepository.observe(),
         exportedJson,
         importMessage,
@@ -45,7 +53,33 @@ class SettingsViewModel(
         syncMessage
     ) { settings, exported, message, syncing, sync ->
         SettingsUiState(settings, exported, message, syncing, sync)
+    }
+
+    val uiState: StateFlow<SettingsUiState> = combine(baseState, isSaving, saveMessage) { base, saving, saved ->
+        base.copy(isSaving = saving, saveMessage = saved)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+
+    /** "Save to device": the same backup JSON as sharing, written to a file the user picked. */
+    private val backupSaver = backupSaverFor(application) { backupRepository.exportToJson() }
+
+    /** [uri] is what the system file picker returned; null means the user cancelled (no message). */
+    fun saveBackupTo(uri: Uri?) {
+        if (uri == null || isSaving.value) return
+        isSaving.value = true
+        viewModelScope.launch {
+            try {
+                saveMessage.value = when (val outcome = backupSaver.save(uri)) {
+                    SaveOutcome.Cancelled -> null
+                    is SaveOutcome.Saved -> savedBackupMessage(getApplication(), uri)
+                    is SaveOutcome.Failed -> "Резервната копија НЕ е зачувана.\n\n${outcome.reason}"
+                }
+            } finally {
+                isSaving.value = false
+            }
+        }
+    }
+
+    fun clearSaveMessage() { saveMessage.value = null }
 
     fun setDefaultServings(servings: Int) {
         viewModelScope.launch {
