@@ -8,6 +8,7 @@ import com.mojrucek.app.domain.model.IngredientMatch
 import com.mojrucek.app.domain.model.MatchStatus
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.usecase.IngredientMergeUseCase
+import com.mojrucek.app.domain.usecase.LegacyPurchasedItems
 import kotlinx.coroutines.flow.Flow
 
 class ShoppingListRepository(
@@ -125,5 +126,22 @@ class ShoppingListRepository(
     suspend fun restoreAll(items: List<ShoppingListItem>) {
         dao.deleteAll()
         items.forEach { dao.insert(it.copy(id = 0)) }
+        // Backups made before purchased items were removed immediately can still contain some.
+        migrateLegacyPurchasedItems()
+    }
+
+    /**
+     * One-time cleanup of items flagged as purchased by older versions (see [LegacyPurchasedItems]).
+     * Safe to run repeatedly. Items are re-opened before anything is deleted, so an interruption
+     * cannot lose an unresolved item.
+     */
+    suspend fun migrateLegacyPurchasedItems() {
+        val plan = LegacyPurchasedItems.plan(dao.getAllOnce())
+        if (plan.isEmpty) return
+        plan.reopen.forEach { dao.update(it) }
+        if (plan.deleteIds.isNotEmpty()) {
+            val doomed = plan.deleteIds.toSet()
+            dao.getAllOnce().filter { it.id in doomed }.forEach { dao.delete(it) }
+        }
     }
 }

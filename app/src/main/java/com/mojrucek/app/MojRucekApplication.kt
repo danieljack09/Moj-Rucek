@@ -28,6 +28,8 @@ class MojRucekApplication : Application() {
             // Recipes come only from the server now; drop the sample recipes older
             // versions of the app built in. The user's own recipes are kept.
             container.recipeRepository.deleteLegacyBuiltIn()
+            // Shopping items are removed as soon as they are resolved; tidy up data from older versions.
+            container.shoppingListRepository.migrateLegacyPurchasedItems()
             container.catalogSyncRepository.sync()
             val settings = container.settingsRepository.getOnce()
             if (settings.reminderEnabled) {
