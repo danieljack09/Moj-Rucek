@@ -40,25 +40,13 @@ fun AccountCard(viewModel: AccountViewModel) {
     val context = LocalContext.current
     var confirmSignOut by remember { mutableStateOf(false) }
     val account = state.account
-    if (!account.available) return
+    // Not configured (debug fallback) or signed out (the gate shows Welcome instead): nothing to show.
+    if (!account.available || !account.signedIn) return
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Сметка", style = MaterialTheme.typography.titleMedium)
             when {
-                !account.signedIn -> {
-                    Text("Не си најавен. Податоците се чуваат само на овој телефон.", style = MaterialTheme.typography.bodyMedium)
-                    Button(
-                        onClick = { viewModel.continueWithGoogle(context) },
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Продолжи со Google") }
-                    OutlinedButton(
-                        onClick = viewModel::continueAsGuest,
-                        enabled = !state.busy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Продолжи како гостин") }
-                }
                 account.kind == AccountKind.GUEST -> {
                     Text("Гостин", style = MaterialTheme.typography.bodyLarge)
                     Text(

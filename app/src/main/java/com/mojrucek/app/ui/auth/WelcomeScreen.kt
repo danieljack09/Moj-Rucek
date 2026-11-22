@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,11 +26,11 @@ import androidx.compose.ui.unit.dp
 import com.mojrucek.app.R
 
 /**
- * First screen when nobody is signed in. Guest or Google; "later" enters the app for this session
- * only (e.g. offline first launch), without creating an account.
+ * First screen when nobody is signed in. Guest or Google; there is no way into the app without
+ * one of them (offline included: the sign-in error is shown and the user stays here).
  */
 @Composable
-fun WelcomeScreen(viewModel: AccountViewModel, onSkip: () -> Unit) {
+fun WelcomeScreen(viewModel: AccountViewModel) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
@@ -71,11 +70,9 @@ fun WelcomeScreen(viewModel: AccountViewModel, onSkip: () -> Unit) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(24.dp))
             if (state.busy) {
+                Spacer(Modifier.height(24.dp))
                 CircularProgressIndicator(Modifier.size(32.dp))
-            } else {
-                TextButton(onClick = onSkip) { Text("Подоцна") }
             }
         }
     }

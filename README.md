@@ -45,7 +45,7 @@ Running tests:
 
 ## Firebase setup (local only, never committed)
 
-This repository is public, so the Firebase config file is **not** in it. Without the file the app still builds and runs; user accounts are simply unavailable in that build.
+This repository is public, so the Firebase config file is **not** in it. Without the file a **debug** build still builds and runs (development fallback): accounts are unavailable and the app opens without signing in. A **release** build without a valid file is refused: `verifyFirebaseConfigRelease` runs before every release task and fails unless `app/google-services.json` exists, is valid JSON, and has a client for `com.mojrucek.app` with an API key and a Web OAuth client. As a second layer, a build that somehow lacks accounts shows a blocking "not configured" screen instead of the app (only the debug build type may bypass this, via `BuildConfig.ALLOW_UNCONFIGURED_AUTH`).
 
 To enable accounts on your machine:
 
@@ -72,7 +72,7 @@ Never commit `google-services.json`, service-account files, keystores (`*.jks`, 
 - **Пазарење** — manual add, quantity/unit/category, purchased checkbox with separate purchased/unpurchased sections grouped by category, duplicate-combining, "Додади во домашни намирници" on purchase (with an explicit "no, bought for today" option that leaves inventory untouched), clear-purchased.
 - **Sunday reminder** — a self-rescheduling WorkManager job fires at the time you set in Поставки, with a POST_NOTIFICATIONS request on first launch (Android 13+) and a manual "Генерирај листа за пазарење" button that works with notifications off.
 - **Поставки** (reached from the gear icon on Почетна, not a 6th bottom-nav tab, per the 5-tab spec) — default household servings, reminder on/off and time, and JSON export (shares a `.json` file via the system share sheet) / import (file picker → validates → shows a summary → asks to confirm before overwriting anything).
-- **Accounts (Phase 2, Stage A — not production-ready yet)** — Welcome screen with *Продолжи со Google* / *Продолжи како гостин* / *Подоцна*; a guest upgrades by **linking** Google to the same Firebase user (same uid, local data untouched). If that Google account already belongs to another user, the app makes and verifies a local snapshot, asks for explicit confirmation, signs in to the existing account and only then clears the local user tables (never merges). Email/password is not offered yet. See the limitations below.
+- **Accounts (Phase 2, Stage A — not production-ready yet)** — Welcome screen with *Продолжи со Google* / *Продолжи како гостин* (an account is required: there is no way into the app without one, and a signed-out user who is offline stays on the Welcome screen with a "no internet" message; an already signed-in user, whose session Firebase keeps on the phone, can open the app offline); a guest upgrades by **linking** Google to the same Firebase user (same uid, local data untouched). If that Google account already belongs to another user, the app makes and verifies a local snapshot, asks for explicit confirmation, signs in to the existing account and only then clears the local user tables (never merges). Email/password is not offered yet. See the limitations below.
 - **Catalog from the server** — the ingredient list and recipes are managed in the admin panel (`server/`, live at rucek.display.mk/admin) and synced into the app on start or via Settings → Синхронизирај; the app ships with no hardcoded recipes.
 
 ## Design decisions worth knowing about

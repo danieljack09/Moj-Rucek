@@ -1,34 +1,80 @@
 package com.mojrucek.app.ui.auth
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mojrucek.app.BuildConfig
 import com.mojrucek.app.di.AppContainer
 import com.mojrucek.app.ui.components.GenericViewModelFactory
 import com.mojrucek.app.ui.navigation.MojRucekNavHost
 
+enum class AuthGateTarget { APP, WELCOME, CONFIG_ERROR }
+
 /**
- * Shows [WelcomeScreen] while nobody is signed in, otherwise the app. Builds without
- * google-services.json (accounts unavailable) go straight to the app, as before.
+ * Who may see what:
+ *  - signed in (guest or Google, including a session Firebase persisted on disk, offline too) -> app;
+ *  - accounts configured but nobody signed in -> Welcome (Google or Guest, nothing else);
+ *  - accounts NOT configured (no google-services.json): only builds that opt in via
+ *    [allowUnconfigured] (debug) run without accounts; every other build is blocked.
  */
+internal fun authGateTarget(available: Boolean, signedIn: Boolean, allowUnconfigured: Boolean): AuthGateTarget = when {
+    signedIn -> AuthGateTarget.APP
+    !available -> if (allowUnconfigured) AuthGateTarget.APP else AuthGateTarget.CONFIG_ERROR
+    else -> AuthGateTarget.WELCOME
+}
+
 @Composable
 fun AuthGate(container: AppContainer) {
     val account by container.authRepository.state.collectAsState()
-    var skipped by rememberSaveable { mutableStateOf(false) }
-    // "Подоцна" only skips until the next sign-in: a later sign-out shows Welcome again.
-    LaunchedEffect(account.signedIn) { if (account.signedIn) skipped = false }
 
-    if (!account.available || account.signedIn || skipped) {
-        MojRucekNavHost(container)
-    } else {
-        val vm: AccountViewModel = viewModel(factory = GenericViewModelFactory {
-            AccountViewModel(container.authRepository, container.accountSwitchRepository)
-        })
-        WelcomeScreen(vm, onSkip = { skipped = true })
+    when (authGateTarget(account.available, account.signedIn, BuildConfig.ALLOW_UNCONFIGURED_AUTH)) {
+        AuthGateTarget.APP -> MojRucekNavHost(container)
+        AuthGateTarget.WELCOME -> {
+            val vm: AccountViewModel = viewModel(factory = GenericViewModelFactory {
+                AccountViewModel(container.authRepository, container.accountSwitchRepository)
+            })
+            WelcomeScreen(vm)
+        }
+        AuthGateTarget.CONFIG_ERROR -> ConfigErrorScreen()
+    }
+}
+
+/** Fully blocking on purpose: no button, no retry. Only a correctly built app can fix this. */
+@Composable
+private fun ConfigErrorScreen() {
+    Scaffold { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("⚠️", style = MaterialTheme.typography.displayLarge)
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Апликацијата не е правилно подесена",
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Оваа верзија нема конфигурација за сметки и не може да се користи. Инсталирај ја официјалната верзија на апликацијата.",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
