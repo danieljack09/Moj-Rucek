@@ -920,13 +920,23 @@ vhost_backup_path() {
 }
 
 guard_check() {   # a request that does not come from Cloudflare must get 403
-  local own code
+  local own code i
   own=$("$IP" -4 -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
   [[ -n $own ]] || { err "cannot determine this server's public IPv4 for the guard check"; return 1; }
-  code=$("$CURL" -sk -o /dev/null -w '%{http_code}' --max-time 10 -H 'CF-Connecting-IP: 1.2.3.4' \
-         --resolve "$HEALTH_HOST:443:$own" "https://$HEALTH_HOST$HEALTH_PATH" 2>/dev/null)
-  [[ $code == 403 ]] || { err "guard check: direct request via $own returned ${code:-nothing}, expected 403"; return 1; }
-  log "  guard check: direct request with a fake CF-Connecting-IP via $own -> 403"
+  # `systemctl reload nginx` returns before nginx has swapped workers, so for a moment an OLD worker can
+  # still answer with the previous config (health_check cannot tell: it answers 200 either way). Retry
+  # like health_check does. A guard that never becomes active still fails after the last attempt.
+  for (( i = 1; i <= HEALTH_TRIES; i++ )); do
+    code=$("$CURL" -sk -o /dev/null -w '%{http_code}' --max-time 10 -H 'CF-Connecting-IP: 1.2.3.4' \
+           --resolve "$HEALTH_HOST:443:$own" "https://$HEALTH_HOST$HEALTH_PATH" 2>/dev/null)
+    if [[ $code == 403 ]]; then
+      log "  guard check: direct request with a fake CF-Connecting-IP via $own -> 403"
+      return 0
+    fi
+    sleep "$HEALTH_DELAY"
+  done
+  err "guard check: direct request via $own returned ${code:-nothing}, expected 403"
+  return 1
 }
 
 mode_install_guard() {

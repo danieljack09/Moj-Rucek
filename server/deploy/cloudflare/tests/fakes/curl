@@ -24,6 +24,8 @@ if [[ $resolve == *:127.0.0.1 ]]; then
   pause_if HEALTH "$n"
   if fails HEALTH "$n"; then printf 502; else printf 200; fi
 else
-  printf '%s' "${FAKE_GUARD_CODE:-403}"
+  n=$(counter guard)
+  if [[ -n ${FAKE_GUARD_OLD_CALLS:-} ]] && (( n <= FAKE_GUARD_OLD_CALLS )); then printf 200   # old nginx worker, previous config
+  else printf '%s' "${FAKE_GUARD_CODE:-403}"; fi
 fi
 exit 0

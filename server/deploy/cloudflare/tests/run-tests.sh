@@ -509,6 +509,16 @@ t_guard_not_effective() {
   run --install-vhost-guard; check_rc 1; check_out "expected 403"; check_out "Previous vhost restored and reloaded"
   check_same "$T/nginx/sites/rucek.display.mk" "$ROOT/vhost/rucek.display.mk.audited"
 }
+t_guard_active_after_reload_settles() {   # real-world race: old nginx workers answer 200 for a moment after the reload
+  adopted; export FAKE_GUARD_OLD_CALLS=3
+  run --install-vhost-guard; check_rc 0; check_out "Guard installed."
+  check_same "$T/nginx/sites/rucek.display.mk" "$ROOT/vhost/rucek.display.mk.guarded"
+}
+t_guard_never_active_still_fails() {   # more "old config" answers than attempts: must still fail and restore
+  adopted; export FAKE_GUARD_OLD_CALLS=99
+  run --install-vhost-guard; check_rc 1; check_out "expected 403"; check_out "Previous vhost restored and reloaded"
+  check_same "$T/nginx/sites/rucek.display.mk" "$ROOT/vhost/rucek.display.mk.audited"
+}
 t_guard_nginx_fails() {
   adopted; export FAKE_NGINX_T_FAIL_CALLS=2
   run --install-vhost-guard; check_rc 1; check_out "Previous vhost restored and reloaded"
