@@ -86,3 +86,15 @@ test('the admin login limiter keys on the real client address (CF-Connecting-IP)
     assert.equal(await attempt('9.9.9.9'), 401);   // ...but another one behind the same Cloudflare edge is not
   } finally { await srv.stop(); }
 });
+
+test('DELETE /api/me needs a valid sign-in: without one it is 401 (503 when accounts are off), other methods stay 404', async () => {
+  const off = await startServer();
+  try { assert.equal((await call(off, 'DELETE', '/api/me', { authorization: 'Bearer a.b.c' })).status, 503); } finally { await off.stop(); }
+  const srv = await startServer({ FIREBASE_PROJECT_ID: 'test-project' });
+  try {
+    assert.equal((await call(srv, 'DELETE', '/api/me')).status, 401);
+    assert.equal((await call(srv, 'DELETE', '/api/me', { authorization: 'Bearer not-a-jwt' })).status, 401);
+    assert.equal((await call(srv, 'DELETE', '/api/session', { authorization: 'Bearer x' })).status, 404);
+    assert.equal((await call(srv, 'PUT', '/api/me')).status, 404);
+  } finally { await srv.stop(); }
+});

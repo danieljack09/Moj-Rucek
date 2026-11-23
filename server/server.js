@@ -220,6 +220,14 @@ async function handle(req, res) {
     return send(res, 200, users.publicShape(row));
   }
 
+  // Account deletion: removes the caller's own record only. Already deleted (or never opened) is also 204.
+  if (p === '/api/me' && m === 'DELETE') {
+    const who = await identity.authenticate(req, clientAddress(req));
+    users.deleteByUid(who.uid);
+    res.writeHead(204, { 'Cache-Control': 'no-store' });
+    return res.end();
+  }
+
   if (p === '/admin' && m === 'GET') {
     return send(res, 200, ADMIN_HTML, {
       'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'",

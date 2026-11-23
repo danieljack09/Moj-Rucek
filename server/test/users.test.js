@@ -99,3 +99,26 @@ test('many concurrent first calls still produce exactly one user', () => {
   for (let i = 0; i < 20; i++) store.upsertSession({ uid: 'same', provider: 'anonymous' });
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1);
 });
+
+test('deleting a user removes only that user, and deleting again is harmless', () => {
+  const { store } = setup();
+  store.upsertSession({ uid: 'u1', provider: 'anonymous' });
+  store.upsertSession({ uid: 'u2', provider: 'google.com' });
+
+  assert.equal(store.deleteByUid('u1'), true);
+  assert.equal(store.findByUid('u1'), null);
+  assert.ok(store.findByUid('u2'), 'the other user is untouched');
+  assert.equal(store.deleteByUid('u1'), false);        // again: nothing to delete, no error
+  assert.equal(store.deleteByUid('never-existed'), false);
+  assert.ok(store.findByUid('u2'));
+});
+
+test('a user deleted and signing in again is a brand-new user with a fresh guest period', () => {
+  const { clock, store } = setup();
+  const first = store.upsertSession({ uid: 'u1', provider: 'anonymous' });
+  clock.t += 20 * DAY;
+  store.deleteByUid('u1');
+  const again = store.upsertSession({ uid: 'u1', provider: 'anonymous' });
+  assert.notEqual(again.id, first.id);
+  assert.equal(again.guest_started_at, clock.t);
+});

@@ -44,6 +44,8 @@ function createUserStore(db, { now = Date.now, guestDays = GUEST_DAYS } = {}) {
     WHERE id = ?
   `);
 
+  const remove = db.prepare('DELETE FROM users WHERE firebase_uid = ?');
+
   const newId = () => 'usr_' + crypto.randomBytes(16).toString('base64url');
 
   function transaction(fn) {
@@ -61,6 +63,15 @@ function createUserStore(db, { now = Date.now, guestDays = GUEST_DAYS } = {}) {
   return {
     findByUid(uid) {
       return selectByUid.get(uid) ?? null;
+    },
+
+    /**
+     * Deletes the user's record (account deletion). Idempotent: deleting a user that is not there is fine.
+     * Only ever removes the row of the given Firebase uid. Returns true if a record existed.
+     * Anything else the server keeps per user in the future must be removed here too.
+     */
+    deleteByUid(uid) {
+      return transaction(() => remove.run(uid).changes > 0);
     },
 
     /** Idempotent: creates the user on the first call, updates it afterwards. Returns the stored row. */
