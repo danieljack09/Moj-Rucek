@@ -10,7 +10,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mojrucek.app.data.dao.AppSettingsDao
 import com.mojrucek.app.data.dao.CatalogDao
 import com.mojrucek.app.data.entity.CatalogIngredient
+import com.mojrucek.app.data.dao.FavoriteDao
 import com.mojrucek.app.data.dao.IngredientDao
+import com.mojrucek.app.data.dao.OwnershipDao
 import com.mojrucek.app.data.dao.PlannerDao
 import com.mojrucek.app.data.dao.RecipeDao
 import com.mojrucek.app.data.dao.ShoppingListDao
@@ -18,9 +20,11 @@ import com.mojrucek.app.data.entity.AppSettings
 import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.PlannedMeal
 import com.mojrucek.app.data.entity.Recipe
+import com.mojrucek.app.data.entity.RecipeFavorite
 import com.mojrucek.app.data.entity.RecipeIngredient
 import com.mojrucek.app.data.entity.ShoppingListItem
 import com.mojrucek.app.data.entity.WeeklyPlan
+import java.io.File
 
 @Database(
     entities = [
@@ -31,9 +35,10 @@ import com.mojrucek.app.data.entity.WeeklyPlan
         PlannedMeal::class,
         WeeklyPlan::class,
         AppSettings::class,
-        CatalogIngredient::class
+        CatalogIngredient::class,
+        RecipeFavorite::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -45,18 +50,37 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plannerDao(): PlannerDao
     abstract fun appSettingsDao(): AppSettingsDao
     abstract fun catalogDao(): CatalogDao
+    abstract fun ownershipDao(): OwnershipDao
+    abstract fun favoriteDao(): FavoriteDao
 
     companion object {
         @Volatile
         private var instance: AppDatabase? = null
 
+        private const val DB_NAME = "mojrucek.db"
+
+        /** Must match `version` in the @Database annotation above. */
+        const val SCHEMA_VERSION = 4
+
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "mojrucek.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                instance ?: run {
+                    val app = context.applicationContext
+                    // Before an upgrade, keep a copy of the old database. A failure here must not stop the app.
+                    try {
+                        DatabaseUpgradeBackup.copyAsideIfNeeded(
+                            dbFile = app.getDatabasePath(DB_NAME),
+                            backupDir = File(app.filesDir, "db-backups"),
+                            targetVersion = SCHEMA_VERSION
+                        )
+                    } catch (e: Exception) {
+                        // Continue without the extra copy.
+                    }
+                    Room.databaseBuilder(app, AppDatabase::class.java, DB_NAME)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                        .build()
+                        .also { instance = it }
+                }
             }
 
         /**
@@ -112,6 +136,65 @@ abstract class AppDatabase : RoomDatabase() {
                         "ON catalog_ingredients (normalizedName)"
                 )
                 db.execSQL("ALTER TABLE recipes ADD COLUMN serverId INTEGER")
+            }
+        }
+
+        /**
+         * Account ownership and sync groundwork (docs/room-v4-ownership-and-sync-design.md): adds the
+         * ownerUid / uuid / updatedAt / deletedAt / dirty columns, gives every existing row its own
+         * uuid, makes the weekly-plan uniqueness per owner, and creates + fills recipe_favorites.
+         * Nothing is deleted or rewritten: every existing row keeps all of its old values. Existing
+         * data is left unclaimed (ownerUid = ""); a later step lets the signed-in account claim it.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            // A random version-4 UUID in the canonical 8-4-4-4-12 form, like java.util.UUID.randomUUID().
+            private val uuidSql = "lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || " +
+                "substr(hex(randomblob(2)), 2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || " +
+                "substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))"
+            private val nowMillisSql = "CAST(strftime('%s', 'now') AS INTEGER) * 1000"
+
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // table -> (has its own owner column, has no updatedAt yet and with what value to start)
+                addSyncColumns(db, "ingredients", owned = true, updatedAtFrom = null)           // already has updatedAt
+                addSyncColumns(db, "shopping_list_items", owned = true, updatedAtFrom = "createdAt")
+                addSyncColumns(db, "weekly_plans", owned = true, updatedAtFrom = "createdAt")
+                addSyncColumns(db, "planned_meals", owned = false, updatedAtFrom = nowMillisSql)
+                addSyncColumns(db, "recipes", owned = true, updatedAtFrom = "createdAt")
+
+                // One plan per week PER OWNER (was: one per week on the whole phone).
+                db.execSQL("DROP INDEX IF EXISTS index_weekly_plans_weekStartEpochDay")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_weekly_plans_ownerUid_weekStartEpochDay " +
+                        "ON weekly_plans (ownerUid, weekStartEpochDay)"
+                )
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS recipe_favorites (" +
+                        "ownerUid TEXT NOT NULL, " +
+                        "recipeRef TEXT NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL, " +
+                        "deletedAt INTEGER, " +
+                        "dirty INTEGER NOT NULL DEFAULT 1, " +
+                        "PRIMARY KEY(ownerUid, recipeRef))"
+                )
+                // The old per-recipe favourite flags become favourites of the (not yet known) owner.
+                db.execSQL(
+                    "INSERT INTO recipe_favorites (ownerUid, recipeRef, updatedAt, deletedAt, dirty) " +
+                        "SELECT '', CASE WHEN serverId IS NOT NULL THEN 's:' || serverId ELSE 'u:' || uuid END, " +
+                        "updatedAt, NULL, 1 FROM recipes WHERE isFavorite = 1"
+                )
+            }
+
+            private fun addSyncColumns(db: SupportSQLiteDatabase, table: String, owned: Boolean, updatedAtFrom: String?) {
+                if (owned) db.execSQL("ALTER TABLE $table ADD COLUMN ownerUid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN uuid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN deletedAt INTEGER")
+                db.execSQL("ALTER TABLE $table ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1")
+                if (updatedAtFrom != null) {
+                    db.execSQL("ALTER TABLE $table ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("UPDATE $table SET updatedAt = $updatedAtFrom")
+                }
+                db.execSQL("UPDATE $table SET uuid = $uuidSql")   // evaluated separately for every row
             }
         }
     }

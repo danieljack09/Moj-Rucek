@@ -14,8 +14,11 @@ import java.io.FileOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-/** A local backup that was written, read back and validated. The file is never deleted by the app. */
-data class VerifiedSnapshot(val file: File, val summary: BackupSummary)
+/**
+ * A local backup that was written, read back and validated. The file is never deleted by the app.
+ * [ownerKey] is the account whose data it holds (the guest): the later clear-out touches ONLY that account's rows.
+ */
+data class VerifiedSnapshot(val file: File, val summary: BackupSummary, val ownerKey: String)
 
 sealed interface SnapshotResult {
     data class Ok(val snapshot: VerifiedSnapshot) : SnapshotResult
@@ -34,16 +37,19 @@ sealed interface SnapshotResult {
 class AccountSwitchRepository(
     private val context: Context,
     private val database: AppDatabase,
-    private val backupRepository: BackupRepository
+    private val backupRepository: BackupRepository,
+    private val owner: CurrentOwner
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun createVerifiedSnapshot(): SnapshotResult = withContext(Dispatchers.IO) {
         try {
+            // The snapshot is of the account that is signed in right now (the guest).
+            val ownerKey = owner.key
             // One read transaction: the export and its counts describe the same database state.
             val (exported, live) = database.withTransaction {
-                backupRepository.exportToJson() to backupRepository.currentSummary()
+                backupRepository.exportToJson(ownerKey) to backupRepository.currentSummary(ownerKey)
             }
             val dir = File(context.filesDir, SNAPSHOT_DIR).apply { mkdirs() }
             val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
@@ -70,7 +76,7 @@ class AccountSwitchRepository(
             if (summary != live) {
                 return@withContext SnapshotResult.Failed("Зачуваната копија не ги содржи сите податоци.")
             }
-            SnapshotResult.Ok(VerifiedSnapshot(file, summary))
+            SnapshotResult.Ok(VerifiedSnapshot(file, summary, ownerKey))
         } catch (e: Exception) {
             SnapshotResult.Failed("Копијата не можеше да се направи (${e.javaClass.simpleName}).")
         }
@@ -79,7 +85,7 @@ class AccountSwitchRepository(
     /** True when the snapshot file is still intact and the database still has exactly its content. */
     suspend fun matchesSnapshot(snapshot: VerifiedSnapshot): Boolean = withContext(Dispatchers.IO) {
         try {
-            val current = database.withTransaction { backupRepository.exportToJson() }
+            val current = database.withTransaction { backupRepository.exportToJson(snapshot.ownerKey) }
             sameData(snapshot.file.readText(Charsets.UTF_8), current)
         } catch (e: Exception) {
             false
@@ -87,19 +93,22 @@ class AccountSwitchRepository(
     }
 
     /**
-     * Removes the user's own data from this phone in ONE transaction, and only if the database
-     * still equals [snapshot] (re-checked inside that transaction). Returns false, deleting
-     * nothing, when it does not. Settings, the server catalog and server recipes stay.
+     * Removes the snapshot account's own data from this phone in ONE transaction, and only if that
+     * account's data still equals [snapshot] (re-checked inside that transaction). Returns false,
+     * deleting nothing, when it does not. Only rows of [VerifiedSnapshot.ownerKey] are deleted, never
+     * another account's (the account signed in NOW is usually a different one). Settings, the server
+     * catalog and server recipes stay.
      */
     suspend fun clearLocalUserData(snapshot: VerifiedSnapshot): Boolean = withContext(Dispatchers.IO) {
         val saved = snapshot.file.readText(Charsets.UTF_8)
         database.withTransaction {
-            if (!sameData(saved, backupRepository.exportToJson())) return@withTransaction false
-            database.plannerDao().deleteAllPlans()          // planned meals cascade
-            database.shoppingListDao().deleteAll()
-            database.ingredientDao().deleteAll()            // the pantry; catalog_ingredients is untouched
-            database.recipeDao().deleteLocalOnly()          // serverId IS NULL; recipe ingredients cascade
-            database.recipeDao().clearFavorites()           // favourite marks are user data too
+            val ownerKey = snapshot.ownerKey
+            if (!sameData(saved, backupRepository.exportToJson(ownerKey))) return@withTransaction false
+            database.plannerDao().deleteAllPlans(ownerKey)  // planned meals cascade
+            database.shoppingListDao().deleteAll(ownerKey)
+            database.ingredientDao().deleteAll(ownerKey)    // the pantry; catalog_ingredients is untouched
+            database.recipeDao().deleteLocalOnly(ownerKey)  // the account's own recipes; ingredient lines cascade
+            database.favoriteDao().removeAll(ownerKey)      // the guest's favourites; other accounts' favourites stay
             true
         }
     }

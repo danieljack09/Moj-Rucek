@@ -12,23 +12,27 @@ import com.mojrucek.app.data.entity.RecipeIngredient
 import com.mojrucek.app.data.relation.RecipeWithIngredients
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Recipes come in two kinds: the shared server catalog (serverId set, the same for every account) and a
+ * user's own (serverId null, owned). "Visible" below means: the catalog plus that owner's own recipes.
+ */
 @Dao
 interface RecipeDao {
 
     @Transaction
-    @Query("SELECT * FROM recipes ORDER BY name COLLATE NOCASE ASC")
-    fun observeAllWithIngredients(): Flow<List<RecipeWithIngredients>>
+    @Query("SELECT * FROM recipes WHERE serverId IS NOT NULL OR ownerUid = :ownerUid ORDER BY name COLLATE NOCASE ASC")
+    fun observeAllWithIngredients(ownerUid: String): Flow<List<RecipeWithIngredients>>
 
     @Transaction
-    @Query("SELECT * FROM recipes WHERE id = :id")
-    fun observeWithIngredients(id: Long): Flow<RecipeWithIngredients?>
+    @Query("SELECT * FROM recipes WHERE id = :id AND (serverId IS NOT NULL OR ownerUid = :ownerUid)")
+    fun observeWithIngredients(id: Long, ownerUid: String): Flow<RecipeWithIngredients?>
 
     @Transaction
-    @Query("SELECT * FROM recipes WHERE id = :id")
-    suspend fun getWithIngredients(id: Long): RecipeWithIngredients?
+    @Query("SELECT * FROM recipes WHERE id = :id AND (serverId IS NOT NULL OR ownerUid = :ownerUid)")
+    suspend fun getWithIngredients(id: Long, ownerUid: String): RecipeWithIngredients?
 
-    @Query("SELECT * FROM recipes WHERE id = :id")
-    suspend fun getById(id: Long): Recipe?
+    @Query("SELECT * FROM recipes WHERE id = :id AND (serverId IS NOT NULL OR ownerUid = :ownerUid)")
+    suspend fun getById(id: Long, ownerUid: String): Recipe?
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertRecipe(recipe: Recipe): Long
@@ -51,29 +55,21 @@ interface RecipeDao {
         insertIngredients(ingredients)
     }
 
-    @Query("UPDATE recipes SET isFavorite = :isFavorite WHERE id = :id")
-    suspend fun setFavorite(id: Long, isFavorite: Boolean)
-
+    /** Server catalog recipe lookup used by the catalog sync: shared data, so not owner-scoped. */
     @Query("SELECT * FROM recipes WHERE serverId = :serverId LIMIT 1")
     suspend fun findByServerId(serverId: Long): Recipe?
 
     @Query("DELETE FROM recipes WHERE serverId IS NULL AND isUserCreated = 0")
     suspend fun deleteUnsyncedBuiltIn()
 
-    @Query("SELECT COUNT(*) FROM recipes")
-    suspend fun count(): Int
+    @Query("SELECT COUNT(*) FROM recipes WHERE serverId IS NOT NULL OR ownerUid = :ownerUid")
+    suspend fun count(ownerUid: String): Int
 
     @Transaction
-    @Query("SELECT * FROM recipes")
-    suspend fun getAllWithIngredientsOnce(): List<RecipeWithIngredients>
+    @Query("SELECT * FROM recipes WHERE serverId IS NOT NULL OR ownerUid = :ownerUid")
+    suspend fun getAllWithIngredientsOnce(ownerUid: String): List<RecipeWithIngredients>
 
-    @Query("DELETE FROM recipes")
-    suspend fun deleteAll()
-
-    /** Recipes that exist only on this device (the user's own). Server catalog recipes are kept. */
-    @Query("DELETE FROM recipes WHERE serverId IS NULL")
-    suspend fun deleteLocalOnly()
-
-    @Query("UPDATE recipes SET isFavorite = 0 WHERE isFavorite = 1")
-    suspend fun clearFavorites()
+    /** The owner's own recipes (their ingredient lines go with them). Server catalog recipes are kept. */
+    @Query("DELETE FROM recipes WHERE serverId IS NULL AND ownerUid = :ownerUid")
+    suspend fun deleteLocalOnly(ownerUid: String)
 }

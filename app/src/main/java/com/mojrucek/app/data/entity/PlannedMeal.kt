@@ -1,10 +1,12 @@
 package com.mojrucek.app.data.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * One day's slot within a [WeeklyPlan]. [dayOfWeek] follows
@@ -40,5 +42,10 @@ data class PlannedMeal(
     val dayOfWeek: Int,
     val recipeId: Long? = null,
     /** Overrides the plan's household servings for this one day, if set. */
-    val servingsOverride: Int? = null
+    val servingsOverride: Int? = null,
+    // Room v4: sync groundwork, see SyncColumns.kt. A meal belongs to its plan, so it has no ownerUid of its own.
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "''") val uuid: String = newUuid(),
+    @Transient val deletedAt: Long? = null,
+    @ColumnInfo(defaultValue = "1") @Transient val dirty: Boolean = true
 )

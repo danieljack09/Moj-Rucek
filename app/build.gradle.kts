@@ -66,6 +66,9 @@ android {
         buildConfig = true
     }
 
+    // Room's exported schema files (app/schemas) let the migration tests build a database of an OLD version.
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -170,4 +173,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.androidx.room.testing)
 }

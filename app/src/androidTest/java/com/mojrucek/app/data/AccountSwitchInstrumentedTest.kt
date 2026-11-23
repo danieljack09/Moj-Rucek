@@ -1,5 +1,8 @@
 package com.mojrucek.app.data
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.mojrucek.app.repository.OwnerKeys
+import com.mojrucek.app.repository.CurrentOwner
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.room.Room
@@ -39,6 +42,9 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class AccountSwitchInstrumentedTest {
 
+    /** These older tests create data without an owner (like data from before accounts): use the unowned bucket. */
+    private val owner = CurrentOwner.following(MutableStateFlow(OwnerKeys.UNOWNED))
+
     private lateinit var db: AppDatabase
     private lateinit var tempFiles: File
     private lateinit var repo: AccountSwitchRepository
@@ -54,14 +60,14 @@ class AccountSwitchInstrumentedTest {
             override fun getFilesDir(): File = tempFiles
         }
         db = Room.inMemoryDatabaseBuilder(target, AppDatabase::class.java).build()
-        recipeRepository = RecipeRepository(db.recipeDao())
-        ingredientRepository = IngredientRepository(db.ingredientDao())
-        val shoppingListRepository = ShoppingListRepository(db.shoppingListDao(), ingredientRepository)
-        plannerRepository = PlannerRepository(db.plannerDao(), recipeRepository, ingredientRepository, shoppingListRepository)
+        recipeRepository = RecipeRepository(db.recipeDao(), db.favoriteDao(), owner)
+        ingredientRepository = IngredientRepository(db.ingredientDao(), owner)
+        val shoppingListRepository = ShoppingListRepository(db.shoppingListDao(), ingredientRepository, owner)
+        plannerRepository = PlannerRepository(db.plannerDao(), recipeRepository, ingredientRepository, shoppingListRepository, owner)
         val backup = BackupRepository(
-            ingredientRepository, recipeRepository, shoppingListRepository, db.plannerDao(), SettingsRepository(db.appSettingsDao()), db
+            ingredientRepository, recipeRepository, shoppingListRepository, db.plannerDao(), SettingsRepository(db.appSettingsDao()), db, owner
         )
-        repo = AccountSwitchRepository(context, db, backup)
+        repo = AccountSwitchRepository(context, db, backup, owner)
     }
 
     @After
@@ -77,13 +83,15 @@ class AccountSwitchInstrumentedTest {
             CatalogIngredient(serverId = 1, name = "Ориз", normalizedName = "ориз", category = IngredientCategory.DRUGO, defaultUnit = MeasurementUnit.GRAM)
         )
         val serverRecipe = recipeRepository.upsert(
-            Recipe(name = "Сервер рецепт", isUserCreated = false, serverId = 77, isFavorite = true),
+            Recipe(name = "Сервер рецепт", isUserCreated = false, serverId = 77),
             listOf(RecipeIngredient(recipeId = 0, name = "Ориз", normalizedName = "ориз", quantity = 100.0, unit = MeasurementUnit.GRAM))
         )
         val ownRecipe = recipeRepository.upsert(
-            Recipe(name = "Мој рецепт", isFavorite = true),
+            Recipe(name = "Мој рецепт"),
             listOf(RecipeIngredient(recipeId = 0, name = "Јајца", normalizedName = "јајца", quantity = 2.0, unit = MeasurementUnit.PIECE))
         )
+        recipeRepository.setFavorite(serverRecipe, true)   // favourites live in their own table now
+        recipeRepository.setFavorite(ownRecipe, true)
         db.ingredientDao().insert(
             Ingredient(name = "Јајца", normalizedName = "јајца", category = IngredientCategory.DRUGO, quantity = 6.0, unit = MeasurementUnit.PIECE)
         )
@@ -123,7 +131,7 @@ class AccountSwitchInstrumentedTest {
         assertEquals(0, count("SELECT COUNT(*) FROM weekly_plans"))
         assertEquals(0, count("SELECT COUNT(*) FROM planned_meals"))
         assertEquals(0, count("SELECT COUNT(*) FROM recipes WHERE serverId IS NULL"))
-        assertEquals(0, count("SELECT COUNT(*) FROM recipes WHERE isFavorite = 1"))
+        assertEquals(0, count("SELECT COUNT(*) FROM recipe_favorites"))
         // Kept: the server catalog, server recipes (with their ingredient lines).
         assertEquals(1, count("SELECT COUNT(*) FROM catalog_ingredients"))
         assertEquals(1, count("SELECT COUNT(*) FROM recipes WHERE serverId = 77"))

@@ -12,8 +12,8 @@ build/
 # Android Studio / IntelliJ
 .idea/
 
-# Room schema export (regenerated from entities)
-app/schemas/
+# Room schema export (app/schemas) is NOT ignored: it is committed, because the migration tests
+# need the schema of every released database version.
 
 # Secrets and credentials: this repository is public. Never commit these.
 # Firebase / Google (each developer downloads google-services.json from the Firebase console)

@@ -1,5 +1,8 @@
 package com.mojrucek.app.data
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.mojrucek.app.repository.OwnerKeys
+import com.mojrucek.app.repository.CurrentOwner
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -21,6 +24,9 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class PlannerShoppingListInstrumentedTest {
 
+    /** These older tests create data without an owner (like data from before accounts): use the unowned bucket. */
+    private val owner = CurrentOwner.following(MutableStateFlow(OwnerKeys.UNOWNED))
+
     private lateinit var db: AppDatabase
     private lateinit var recipeRepository: RecipeRepository
     private lateinit var ingredientRepository: IngredientRepository
@@ -33,10 +39,10 @@ class PlannerShoppingListInstrumentedTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        recipeRepository = RecipeRepository(db.recipeDao())
-        ingredientRepository = IngredientRepository(db.ingredientDao())
-        shoppingListRepository = ShoppingListRepository(db.shoppingListDao(), ingredientRepository)
-        plannerRepository = PlannerRepository(db.plannerDao(), recipeRepository, ingredientRepository, shoppingListRepository)
+        recipeRepository = RecipeRepository(db.recipeDao(), db.favoriteDao(), owner)
+        ingredientRepository = IngredientRepository(db.ingredientDao(), owner)
+        shoppingListRepository = ShoppingListRepository(db.shoppingListDao(), ingredientRepository, owner)
+        plannerRepository = PlannerRepository(db.plannerDao(), recipeRepository, ingredientRepository, shoppingListRepository, owner)
     }
 
     @After

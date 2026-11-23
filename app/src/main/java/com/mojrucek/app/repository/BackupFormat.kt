@@ -66,4 +66,18 @@ object BackupFormat {
      */
     fun remapMealRecipes(meals: List<PlannedMeal>, newIdByOldId: Map<Long, Long>): List<PlannedMeal> =
         meals.map { meal -> meal.copy(recipeId = meal.recipeId?.let { newIdByOldId[it] }) }
+
+    /**
+     * Restored plans and recipes get NEW ids (the old ones may already belong to another account's rows),
+     * so every planned meal is re-pointed at its new plan and its new recipe and gets a fresh id of its own.
+     * A meal whose plan was not restored is dropped; one whose recipe was not restored keeps its day.
+     */
+    fun remapMeals(
+        meals: List<PlannedMeal>,
+        newPlanIdByOldId: Map<Long, Long>,
+        newRecipeIdByOldId: Map<Long, Long>
+    ): List<PlannedMeal> = remapMealRecipes(meals, newRecipeIdByOldId).mapNotNull { meal ->
+        val newPlanId = newPlanIdByOldId[meal.weeklyPlanId] ?: return@mapNotNull null
+        meal.copy(id = 0, weeklyPlanId = newPlanId)
+    }
 }

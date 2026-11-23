@@ -6,16 +6,20 @@ import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.usecase.IngredientMergeUseCase
 import com.mojrucek.app.domain.usecase.WeekCalculator
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 
-class IngredientRepository(private val dao: IngredientDao) {
+/** The pantry of the account that is signed in: every call goes through [owner], so accounts never mix. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class IngredientRepository(private val dao: IngredientDao, private val owner: CurrentOwner) {
 
-    fun observeAll(): Flow<List<Ingredient>> = dao.observeAll()
+    fun observeAll(): Flow<List<Ingredient>> = owner.flow.flatMapLatest { dao.observeAll(it) }
 
-    fun observeLowStock(): Flow<List<Ingredient>> = dao.observeAll().map { list -> list.filter { it.isLowStock } }
+    fun observeLowStock(): Flow<List<Ingredient>> = observeAll().map { list -> list.filter { it.isLowStock } }
 
-    fun observeExpiringSoon(withinDays: Long = 5): Flow<List<Ingredient>> = dao.observeAll().map { list ->
+    fun observeExpiringSoon(withinDays: Long = 5): Flow<List<Ingredient>> = observeAll().map { list ->
         val today = WeekCalculator.today().toEpochDay()
         list.filter { ingredient ->
             val exp = ingredient.expirationDateEpochDay ?: return@filter false
@@ -23,13 +27,13 @@ class IngredientRepository(private val dao: IngredientDao) {
         }
     }
 
-    suspend fun getById(id: Long): Ingredient? = dao.getById(id)
+    suspend fun getById(id: Long): Ingredient? = dao.getById(id, owner.key)
 
     suspend fun findExistingByName(name: String): Ingredient? =
-        dao.findByNormalizedName(Ingredient.normalize(name))
+        dao.findByNormalizedName(Ingredient.normalize(name), owner.key)
 
     suspend fun findManyByNames(names: Collection<String>): List<Ingredient> =
-        dao.findByNormalizedNames(names.map { Ingredient.normalize(it) }.distinct())
+        dao.findByNormalizedNames(names.map { Ingredient.normalize(it) }.distinct(), owner.key)
 
     suspend fun insert(
         name: String,
@@ -48,7 +52,8 @@ class IngredientRepository(private val dao: IngredientDao) {
             unit = unit,
             expirationDateEpochDay = expirationDateEpochDay,
             lowStockThreshold = lowStockThreshold,
-            notes = notes?.takeIf { it.isNotBlank() }
+            notes = notes?.takeIf { it.isNotBlank() },
+            ownerUid = owner.key
         )
     )
 
@@ -69,13 +74,13 @@ class IngredientRepository(private val dao: IngredientDao) {
             incomingUnit = addUnit
         )
         if (result is IngredientMergeUseCase.Result.Merged) {
-            dao.updateQuantity(existing.id, result.combinedQuantity)
+            dao.updateQuantity(existing.id, result.combinedQuantity, existing.ownerUid)
         }
         return result
     }
 
     suspend fun setQuantity(id: Long, quantity: Double) =
-        dao.updateQuantity(id, quantity.coerceAtLeast(0.0))
+        dao.updateQuantity(id, quantity.coerceAtLeast(0.0), owner.key)
 
     /** Decreasing to zero (or below) removes the ingredient instead of leaving an empty entry behind. */
     suspend fun adjustQuantity(ingredient: Ingredient, delta: Double) {
@@ -83,18 +88,21 @@ class IngredientRepository(private val dao: IngredientDao) {
         if (newQuantity <= 0.0) {
             dao.delete(ingredient)
         } else {
-            dao.updateQuantity(ingredient.id, newQuantity)
+            dao.updateQuantity(ingredient.id, newQuantity, ingredient.ownerUid)
         }
     }
 
     suspend fun markFinished(ingredient: Ingredient) = dao.delete(ingredient)
 
-    suspend fun getAllOnce(): List<Ingredient> = dao.getAllOnce()
+    /** The pantry of [ownerKey] (default: the signed-in account). */
+    suspend fun getAllOnce(ownerKey: String = owner.key): List<Ingredient> = dao.getAllOnce(ownerKey)
 
-    suspend fun clearAll() = dao.deleteAll()
+    suspend fun clearAll() = dao.deleteAll(owner.key)
 
+    /** Replaces the signed-in account's pantry with [ingredients]; every restored row becomes theirs. */
     suspend fun restoreAll(ingredients: List<Ingredient>) {
-        dao.deleteAll()
-        ingredients.forEach { dao.insert(it.copy(id = 0)) }
+        val ownerKey = owner.key
+        dao.deleteAll(ownerKey)
+        ingredients.forEach { dao.insert(it.copy(id = 0, ownerUid = ownerKey)) }
     }
 }

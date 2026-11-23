@@ -1,5 +1,8 @@
 package com.mojrucek.app.data
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.mojrucek.app.repository.OwnerKeys
+import com.mojrucek.app.repository.CurrentOwner
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -35,6 +38,9 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class BackupRestoreInstrumentedTest {
 
+    /** These older tests create data without an owner (like data from before accounts): use the unowned bucket. */
+    private val owner = CurrentOwner.following(MutableStateFlow(OwnerKeys.UNOWNED))
+
     private lateinit var db: AppDatabase
     private lateinit var recipes: RecipeRepository
     private lateinit var ingredients: IngredientRepository
@@ -47,12 +53,12 @@ class BackupRestoreInstrumentedTest {
     fun setUp() {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         db = Room.inMemoryDatabaseBuilder(target, AppDatabase::class.java).build()
-        recipes = RecipeRepository(db.recipeDao())
-        ingredients = IngredientRepository(db.ingredientDao())
-        shopping = ShoppingListRepository(db.shoppingListDao(), ingredients)
-        planner = PlannerRepository(db.plannerDao(), recipes, ingredients, shopping)
+        recipes = RecipeRepository(db.recipeDao(), db.favoriteDao(), owner)
+        ingredients = IngredientRepository(db.ingredientDao(), owner)
+        shopping = ShoppingListRepository(db.shoppingListDao(), ingredients, owner)
+        planner = PlannerRepository(db.plannerDao(), recipes, ingredients, shopping, owner)
         settings = SettingsRepository(db.appSettingsDao())
-        backup = BackupRepository(ingredients, recipes, shopping, db.plannerDao(), settings, db)
+        backup = BackupRepository(ingredients, recipes, shopping, db.plannerDao(), settings, db, owner)
     }
 
     @After
@@ -78,14 +84,14 @@ class BackupRestoreInstrumentedTest {
     /** day of week -> name of the recipe the planned meal points at. */
     private suspend fun mealRecipeNames(): Map<Int, String?> {
         val nameById = recipes.getAllWithIngredientsOnce().associate { it.recipe.id to it.recipe.name }
-        return db.plannerDao().getAllWithMealsOnce().flatMap { it.meals }.associate { it.dayOfWeek to it.recipeId?.let(nameById::get) }
+        return db.plannerDao().getAllWithMealsOnce(OwnerKeys.UNOWNED).flatMap { it.meals }.associate { it.dayOfWeek to it.recipeId?.let(nameById::get) }
     }
 
     private suspend fun worldSummary() = listOf(
         recipes.getAllWithIngredientsOnce().map { it.recipe.name }.sorted(),
         ingredients.getAllOnce().map { it.name }.sorted(),
         shopping.getAllOnce().map { it.name }.sorted(),
-        db.plannerDao().getAllWithMealsOnce().size
+        db.plannerDao().getAllWithMealsOnce(OwnerKeys.UNOWNED).size
     )
 
     @Test
@@ -112,14 +118,14 @@ class BackupRestoreInstrumentedTest {
         // Different current data, so a half-applied restore would be visible.
         recipes.clearAll()
         recipes.upsert(Recipe(name = "Тековен рецепт"), listOf(line("z")))
-        db.shoppingListDao().deleteAll()
+        db.shoppingListDao().deleteAll(OwnerKeys.UNOWNED)
         val before = worldSummary()
 
         // The last restore step (planned meals) blows up, after the earlier steps already ran.
         val failingPlanner = object : PlannerDao by db.plannerDao() {
             override suspend fun insertMeals(meals: List<PlannedMeal>) = throw IllegalStateException("simulated failure")
         }
-        val failing = BackupRepository(ingredients, recipes, shopping, failingPlanner, settings, db)
+        val failing = BackupRepository(ingredients, recipes, shopping, failingPlanner, settings, db, owner)
 
         val result = failing.import(file)
 

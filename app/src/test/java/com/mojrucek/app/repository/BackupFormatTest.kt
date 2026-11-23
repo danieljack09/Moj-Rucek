@@ -137,6 +137,30 @@ class BackupFormatTest {
         assertNull(BackupFormat.remapMealRecipes(meals, mapOf(1L to 2L)).single().recipeId)
     }
 
+    @Test fun restoredPlansAndRecipesGetNewIds_andEveryMealFollowsBoth_withAFreshIdOfItsOwn() {
+        val meals = listOf(
+            PlannedMeal(id = 7, weeklyPlanId = 1, dayOfWeek = 1, recipeId = 5, servingsOverride = 3),
+            PlannedMeal(id = 8, weeklyPlanId = 2, dayOfWeek = 1, recipeId = 9)
+        )
+        val remapped = BackupFormat.remapMeals(meals, newPlanIdByOldId = mapOf(1L to 101L, 2L to 102L), newRecipeIdByOldId = mapOf(5L to 205L, 9L to 209L))
+        assertEquals(listOf(101L, 102L), remapped.map { it.weeklyPlanId })
+        assertEquals(listOf(205L, 209L), remapped.map { it.recipeId })
+        assertEquals("fresh ids so they cannot collide with another account's meals", listOf(0L, 0L), remapped.map { it.id })
+        assertEquals(3, remapped[0].servingsOverride)
+    }
+
+    @Test fun aMealWhosePlanWasNotRestored_isDropped_andOneWhoseRecipeWasNotRestored_keepsItsDay() {
+        val meals = listOf(
+            PlannedMeal(id = 1, weeklyPlanId = 1, dayOfWeek = 2, recipeId = 5),
+            PlannedMeal(id = 2, weeklyPlanId = 99, dayOfWeek = 3, recipeId = 5)
+        )
+        val remapped = BackupFormat.remapMeals(meals, mapOf(1L to 101L), mapOf(5L to 205L)).single()
+        assertEquals(101L, remapped.weeklyPlanId)
+        val noRecipe = BackupFormat.remapMeals(meals.take(1), mapOf(1L to 101L), emptyMap()).single()
+        assertNull(noRecipe.recipeId)
+        assertEquals(2, noRecipe.dayOfWeek)
+    }
+
     @Test fun anOldIdThatCollidesWithANewId_isNotConfusedWithIt() {
         // old 1 -> new 2, old 2 -> new 1: a naive in-place rewrite would swap them twice.
         val meals = listOf(

@@ -11,14 +11,19 @@ import com.mojrucek.app.domain.model.MatchStatus
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.usecase.IngredientMergeUseCase
 import com.mojrucek.app.domain.usecase.LegacyPurchasedItems
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 
+/** The shopping list of the account that is signed in: every call goes through [owner]. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ShoppingListRepository(
     private val dao: ShoppingListDao,
-    private val ingredientRepository: IngredientRepository
+    private val ingredientRepository: IngredientRepository,
+    private val owner: CurrentOwner
 ) {
 
-    fun observeAll(): Flow<List<ShoppingListItem>> = dao.observeAll()
+    fun observeAll(): Flow<List<ShoppingListItem>> = owner.flow.flatMapLatest { dao.observeAll(it) }
 
     /** Adds an item, combining it into an existing unpurchased same-name entry when units are compatible (spec §6). */
     suspend fun addOrCombine(
@@ -30,7 +35,7 @@ class ShoppingListRepository(
         sourceWeeklyPlanId: Long? = null
     ): Long {
         val normalized = ShoppingListItem.normalize(name)
-        val existing = dao.findUnpurchasedByNormalizedName(normalized)
+        val existing = dao.findUnpurchasedByNormalizedName(normalized, owner.key)
         if (existing != null) {
             val merge = IngredientMergeUseCase.mergeQuantity(existing.quantity, existing.unit, quantity, unit)
             if (merge is IngredientMergeUseCase.Result.Merged) {
@@ -47,7 +52,8 @@ class ShoppingListRepository(
                 unit = unit,
                 category = category,
                 sourceRecipeId = sourceRecipeId,
-                sourceWeeklyPlanId = sourceWeeklyPlanId
+                sourceWeeklyPlanId = sourceWeeklyPlanId,
+                ownerUid = owner.key
             )
         )
     }
@@ -78,7 +84,7 @@ class ShoppingListRepository(
      * cannot undo shopping someone already did (spec §9 "without creating duplicates").
      */
     suspend fun replaceGeneratedItemsForPlan(weeklyPlanId: Long, items: List<GeneratedShoppingItem>) {
-        dao.getAllOnce()
+        dao.getAllOnce(owner.key)
             .filter { it.sourceWeeklyPlanId == weeklyPlanId && !it.isPurchased }
             .forEach { dao.delete(it) }
 
@@ -156,11 +162,13 @@ class ShoppingListRepository(
      * shopping list item with its original quantity.
      */
     suspend fun undo(undo: ShoppingUndo) {
+        // Another account is signed in now: this undo belongs to the previous one and must not touch anything.
+        if (undo.originalItem.ownerUid != owner.key) return
         undo.inventoryBefore?.let { ingredientRepository.setQuantity(it.id, it.quantity) }
         undo.insertedIngredientId?.let { id ->
             ingredientRepository.getById(id)?.let { ingredientRepository.delete(it) }
         }
-        val current = dao.getAllOnce().firstOrNull { it.id == undo.originalItem.id }
+        val current = dao.getAllOnce(owner.key).firstOrNull { it.id == undo.originalItem.id }
         if (current != null) {
             dao.update(undo.originalItem)
         } else {
@@ -193,13 +201,16 @@ class ShoppingListRepository(
         const val REMAINDER_EPSILON = 1e-9
     }
 
-    suspend fun getAllOnce(): List<ShoppingListItem> = dao.getAllOnce()
+    /** The list of [ownerKey] (default: the signed-in account). */
+    suspend fun getAllOnce(ownerKey: String = owner.key): List<ShoppingListItem> = dao.getAllOnce(ownerKey)
 
-    suspend fun clearAll() = dao.deleteAll()
+    suspend fun clearAll() = dao.deleteAll(owner.key)
 
+    /** Replaces the signed-in account's list with [items]; every restored row becomes theirs. */
     suspend fun restoreAll(items: List<ShoppingListItem>) {
-        dao.deleteAll()
-        items.forEach { dao.insert(it.copy(id = 0)) }
+        val ownerKey = owner.key
+        dao.deleteAll(ownerKey)
+        items.forEach { dao.insert(it.copy(id = 0, ownerUid = ownerKey)) }
         // Backups made before purchased items were removed immediately can still contain some.
         migrateLegacyPurchasedItems()
     }
@@ -210,12 +221,12 @@ class ShoppingListRepository(
      * cannot lose an unresolved item.
      */
     suspend fun migrateLegacyPurchasedItems() {
-        val plan = LegacyPurchasedItems.plan(dao.getAllOnce())
+        val plan = LegacyPurchasedItems.plan(dao.getAllOnce(owner.key))
         if (plan.isEmpty) return
         plan.reopen.forEach { dao.update(it) }
         if (plan.deleteIds.isNotEmpty()) {
             val doomed = plan.deleteIds.toSet()
-            dao.getAllOnce().filter { it.id in doomed }.forEach { dao.delete(it) }
+            dao.getAllOnce(owner.key).filter { it.id in doomed }.forEach { dao.delete(it) }
         }
     }
 }

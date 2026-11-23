@@ -7,7 +7,9 @@ import com.mojrucek.app.data.relation.WeeklyPlanWithMeals
 import com.mojrucek.app.domain.model.IngredientLine
 import com.mojrucek.app.domain.model.ShoppingListGenerationResult
 import com.mojrucek.app.domain.usecase.ShoppingListGeneratorUseCase
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import java.time.LocalDate
 
 /**
@@ -15,26 +17,31 @@ import java.time.LocalDate
  * needs recipe ingredients, the home inventory, and the shopping list
  * itself — crossing repository boundaries is kept here rather than inside
  * any single repository or inside a ViewModel.
+ *
+ * Plans belong to the signed-in account ([owner]); each account has its own plan for a given week.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlannerRepository(
     private val dao: PlannerDao,
     private val recipeRepository: RecipeRepository,
     private val ingredientRepository: IngredientRepository,
-    private val shoppingListRepository: ShoppingListRepository
+    private val shoppingListRepository: ShoppingListRepository,
+    private val owner: CurrentOwner
 ) {
 
     fun observePlanForWeek(weekStart: LocalDate): Flow<WeeklyPlanWithMeals?> =
-        dao.observeWithMealsByWeekStart(weekStart.toEpochDay())
+        owner.flow.flatMapLatest { dao.observeWithMealsByWeekStart(weekStart.toEpochDay(), it) }
 
     suspend fun getPlanForWeek(weekStart: LocalDate): WeeklyPlanWithMeals? =
-        dao.getWithMealsByWeekStart(weekStart.toEpochDay())
+        dao.getWithMealsByWeekStart(weekStart.toEpochDay(), owner.key)
 
     suspend fun getOrCreatePlan(weekStart: LocalDate, defaultServings: Int): WeeklyPlanWithMeals {
         val epoch = weekStart.toEpochDay()
-        dao.getWithMealsByWeekStart(epoch)?.let { return it }
-        val id = dao.insertPlan(WeeklyPlan(weekStartEpochDay = epoch, householdServings = defaultServings))
-        return dao.getWithMealsById(id) ?: WeeklyPlanWithMeals(
-            WeeklyPlan(id = id, weekStartEpochDay = epoch, householdServings = defaultServings),
+        val ownerKey = owner.key
+        dao.getWithMealsByWeekStart(epoch, ownerKey)?.let { return it }
+        val id = dao.insertPlan(WeeklyPlan(weekStartEpochDay = epoch, householdServings = defaultServings, ownerUid = ownerKey))
+        return dao.getWithMealsById(id, ownerKey) ?: WeeklyPlanWithMeals(
+            WeeklyPlan(id = id, weekStartEpochDay = epoch, householdServings = defaultServings, ownerUid = ownerKey),
             emptyList()
         )
     }
@@ -89,5 +96,5 @@ class PlannerRepository(
         return result
     }
 
-    suspend fun clearAll() = dao.deleteAllPlans()
+    suspend fun clearAll() = dao.deleteAllPlans(owner.key)
 }

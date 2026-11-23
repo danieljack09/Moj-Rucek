@@ -42,7 +42,11 @@ fun AuthGate(container: AppContainer) {
     val account by container.authRepository.state.collectAsState()
 
     when (authGateTarget(account.available, account.signedIn, BuildConfig.ALLOW_UNCONFIGURED_AUTH)) {
-        AuthGateTarget.APP -> MojRucekNavHost(container)
+        AuthGateTarget.APP -> {
+            MojRucekNavHost(container)
+            // Shown only when an account signed in and the data from before accounts still needs a decision.
+            LegacyDataPrompt(container)
+        }
         AuthGateTarget.WELCOME -> {
             val vm: AccountViewModel = viewModel(factory = GenericViewModelFactory {
                 AccountViewModel(container.authRepository, container.accountSwitchRepository)

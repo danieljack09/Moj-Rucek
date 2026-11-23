@@ -8,6 +8,7 @@ import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.data.entity.Recipe
 import com.mojrucek.app.data.entity.RecipeCategory
 import com.mojrucek.app.data.entity.RecipeIngredient
+import com.mojrucek.app.data.entity.newUuid
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -100,7 +101,8 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
                 isFavorite = existing?.isFavorite ?: false,
                 isUserCreated = false,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                serverId = r.id
+                serverId = r.id,
+                uuid = existing?.uuid ?: newUuid()
             )
             val recipeId = if (existing == null) recipeDao.insertRecipe(recipe) else {
                 recipeDao.updateRecipe(recipe)

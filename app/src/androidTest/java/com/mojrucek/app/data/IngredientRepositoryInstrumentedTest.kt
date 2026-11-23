@@ -1,5 +1,8 @@
 package com.mojrucek.app.data
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.mojrucek.app.repository.OwnerKeys
+import com.mojrucek.app.repository.CurrentOwner
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -31,7 +34,7 @@ class IngredientRepositoryInstrumentedTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = IngredientRepository(db.ingredientDao())
+        repository = IngredientRepository(db.ingredientDao(), CurrentOwner.following(MutableStateFlow(OwnerKeys.UNOWNED)))
     }
 
     @After

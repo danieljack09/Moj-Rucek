@@ -1,9 +1,11 @@
 package com.mojrucek.app.data.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /**
  * One item in the home ingredient inventory (Намирници).
@@ -25,7 +27,12 @@ data class Ingredient(
     val expirationDateEpochDay: Long? = null,
     val lowStockThreshold: Double? = null,
     val notes: String? = null,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    // Room v4: ownership and sync groundwork, see SyncColumns.kt
+    @ColumnInfo(defaultValue = "''") @Transient val ownerUid: String = "",
+    @ColumnInfo(defaultValue = "''") val uuid: String = newUuid(),
+    @Transient val deletedAt: Long? = null,
+    @ColumnInfo(defaultValue = "1") @Transient val dirty: Boolean = true
 ) {
     val isLowStock: Boolean
         get() = lowStockThreshold != null && quantity <= lowStockThreshold
