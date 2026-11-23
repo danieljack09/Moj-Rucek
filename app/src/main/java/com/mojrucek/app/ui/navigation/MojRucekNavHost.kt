@@ -262,6 +262,14 @@ fun MojRucekNavHost(container: AppContainer) {
                         navController.navigate(Dest.RecipeDetail.path(id)) {
                             popUpTo(Dest.Recipes.route)
                         }
+                    },
+                    // Same as tapping the Shopping tab, so the recipe is still there when you return to Recipes.
+                    onOpenShopping = {
+                        navController.navigate(Dest.Shopping.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 )
             }
