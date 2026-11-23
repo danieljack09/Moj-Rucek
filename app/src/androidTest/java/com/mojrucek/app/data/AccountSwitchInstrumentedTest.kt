@@ -59,7 +59,7 @@ class AccountSwitchInstrumentedTest {
         val shoppingListRepository = ShoppingListRepository(db.shoppingListDao(), ingredientRepository)
         plannerRepository = PlannerRepository(db.plannerDao(), recipeRepository, ingredientRepository, shoppingListRepository)
         val backup = BackupRepository(
-            ingredientRepository, recipeRepository, shoppingListRepository, db.plannerDao(), SettingsRepository(db.appSettingsDao())
+            ingredientRepository, recipeRepository, shoppingListRepository, db.plannerDao(), SettingsRepository(db.appSettingsDao()), db
         )
         repo = AccountSwitchRepository(context, db, backup)
     }

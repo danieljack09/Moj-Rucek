@@ -37,7 +37,8 @@ class AppContainer(context: Context) {
         recipeRepository,
         shoppingListRepository,
         database.plannerDao(),
-        settingsRepository
+        settingsRepository,
+        database
     )
     val authRepository = AuthRepository(context.applicationContext)
     val accountSwitchRepository = AccountSwitchRepository(context.applicationContext, database, backupRepository)

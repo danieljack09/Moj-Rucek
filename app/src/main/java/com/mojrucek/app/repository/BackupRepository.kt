@@ -1,11 +1,12 @@
 package com.mojrucek.app.repository
 
+import androidx.room.withTransaction
+import com.mojrucek.app.data.AppDatabase
 import com.mojrucek.app.data.BackupData
 import com.mojrucek.app.data.BackupSummary
 import com.mojrucek.app.data.dao.PlannerDao
 import com.mojrucek.app.data.summary
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CancellationException
 
 sealed interface ImportResult {
     data class Success(val summary: BackupSummary) : ImportResult
@@ -16,21 +17,18 @@ sealed interface ImportResult {
  * JSON export/import for the whole app (spec §12), so recipes and the rest
  * survive a phone change. Import always validates the file and relies on
  * the caller to get the user's confirmation before [import] overwrites
- * existing data.
+ * existing data. Reading and checking a file lives in [BackupFormat].
  */
 class BackupRepository(
     private val ingredientRepository: IngredientRepository,
     private val recipeRepository: RecipeRepository,
     private val shoppingListRepository: ShoppingListRepository,
     private val plannerDao: PlannerDao,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val database: AppDatabase
 ) {
 
-    private val json = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
+    private val json = BackupFormat.json
 
     suspend fun exportToJson(): String {
         val recipesWithIngredients = recipeRepository.getAllWithIngredientsOnce()
@@ -58,33 +56,43 @@ class BackupRepository(
     )
 
     /** Parses and validates [jsonText] without changing anything, so the UI can show a confirmation first. */
-    fun validate(jsonText: String): ImportResult = try {
-        val data = json.decodeFromString(BackupData.serializer(), jsonText)
-        if (data.formatVersion > BackupData.CURRENT_FORMAT_VERSION) {
-            ImportResult.InvalidFile("Датотеката е зачувана со понова верзија на апликацијата.")
-        } else {
-            ImportResult.Success(data.summary())
-        }
-    } catch (e: SerializationException) {
-        ImportResult.InvalidFile("Датотеката не е валидна резервна копија на Мој Ручек.")
-    } catch (e: IllegalArgumentException) {
-        ImportResult.InvalidFile("Датотеката не е валидна резервна копија на Мој Ручек.")
+    fun validate(jsonText: String): ImportResult = when (val parsed = BackupFormat.parse(jsonText)) {
+        is BackupFormat.Parsed.Ok -> ImportResult.Success(parsed.data.summary())
+        is BackupFormat.Parsed.Invalid -> ImportResult.InvalidFile(parsed.reason)
     }
 
-    /** Overwrites all existing data with the contents of [jsonText]. Call only after the user confirmed. */
+    /**
+     * Overwrites all existing data with the contents of [jsonText]. Call only after the user confirmed.
+     * All or nothing: everything happens in ONE database transaction, so if anything fails the
+     * current data is exactly as it was before.
+     */
     suspend fun import(jsonText: String): ImportResult {
-        val data = try {
-            json.decodeFromString(BackupData.serializer(), jsonText)
-        } catch (e: SerializationException) {
-            return ImportResult.InvalidFile("Датотеката не е валидна резервна копија на Мој Ручек.")
+        val data = when (val parsed = BackupFormat.parse(jsonText)) {
+            is BackupFormat.Parsed.Ok -> parsed.data
+            is BackupFormat.Parsed.Invalid -> return ImportResult.InvalidFile(parsed.reason)
         }
+        return try {
+            database.withTransaction { restore(data) }
+            ImportResult.Success(data.summary())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ImportResult.InvalidFile("Вчитувањето не успеа и ништо не е променето. Обиди се повторно или избери друга датотека.")
+        }
+    }
 
+    private suspend fun restore(data: BackupData) {
         ingredientRepository.restoreAll(data.ingredients)
 
         recipeRepository.clearAll()
         val ingredientsByRecipe = data.recipeIngredients.groupBy { it.recipeId }
+        val newIdByOldId = HashMap<Long, Long>()
         data.recipes.forEach { recipe ->
-            recipeRepository.upsert(recipe.copy(id = 0), ingredientsByRecipe[recipe.id].orEmpty().map { it.copy(id = 0, recipeId = 0) })
+            val newId = recipeRepository.upsert(
+                recipe.copy(id = 0),
+                ingredientsByRecipe[recipe.id].orEmpty().map { it.copy(id = 0, recipeId = 0) }
+            )
+            newIdByOldId[recipe.id] = newId
         }
 
         shoppingListRepository.restoreAll(data.shoppingListItems)
@@ -92,11 +100,10 @@ class BackupRepository(
         plannerDao.deleteAllPlans()
         if (data.weeklyPlans.isNotEmpty()) {
             plannerDao.insertPlans(data.weeklyPlans)
-            plannerDao.insertMeals(data.plannedMeals)
+            // Recipes got new ids above: the planned meals' recipe links must follow them.
+            plannerDao.insertMeals(BackupFormat.remapMealRecipes(data.plannedMeals, newIdByOldId))
         }
 
         settingsRepository.update { data.settings }
-
-        return ImportResult.Success(data.summary())
     }
 }
