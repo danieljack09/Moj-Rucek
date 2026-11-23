@@ -17,6 +17,8 @@ object NotificationHelper {
 
     const val CHANNEL_ID = "sunday_reminder"
     const val EXPIRY_CHANNEL_ID = "expiry_reminder"
+    const val GUEST_CHANNEL_ID = "guest_period"
+    private const val GUEST_NOTIFICATION_ID = 1003
     private const val NOTIFICATION_ID = 1001
     private const val EXPIRY_NOTIFICATION_ID = 1002
 
@@ -41,6 +43,35 @@ object NotificationHelper {
                 description = context.getString(R.string.notification_channel_expiry_desc)
             }
         )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                GUEST_CHANNEL_ID,
+                context.getString(R.string.notification_channel_guest),
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = context.getString(R.string.notification_channel_guest_desc)
+            }
+        )
+    }
+
+    /** "The guest period ends in N days": opens the app; nothing is restricted. */
+    fun showGuestPeriodReminder(context: Context, daysBefore: Int) {
+        if (!hasPermission(context)) return
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(context, 2, openIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val text = com.mojrucek.app.domain.session.GuestTexts.REMINDER_TEXT
+        val notification = NotificationCompat.Builder(context, GUEST_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_agenda)
+            .setContentTitle(com.mojrucek.app.domain.session.GuestTexts.reminderTitle(daysBefore))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        androidx.core.app.NotificationManagerCompat.from(context).notify(GUEST_NOTIFICATION_ID, notification)
     }
 
     fun hasPermission(context: Context): Boolean {

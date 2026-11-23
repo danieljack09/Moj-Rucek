@@ -9,6 +9,7 @@ import com.mojrucek.app.data.entity.Recipe
 import com.mojrucek.app.data.entity.RecipeCategory
 import com.mojrucek.app.data.entity.RecipeIngredient
 import com.mojrucek.app.data.entity.newUuid
+import com.mojrucek.app.session.ServerConfig
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -166,7 +167,7 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
     )
 
     private companion object {
-        const val CATALOG_URL = "https://rucek.display.mk/api/catalog"
+        const val CATALOG_URL = "${ServerConfig.BASE_URL}/api/catalog"
         const val PREFS = "catalog_sync"
         const val KEY_SINCE = "since"    }
 }

@@ -45,7 +45,7 @@ import kotlinx.coroutines.withContext
 
 /** Account section of Settings: shows the account and offers linking (guest) or sign-out (Google). */
 @Composable
-fun AccountCard(viewModel: AccountViewModel) {
+fun AccountCard(viewModel: AccountViewModel, guestLine: String = "Гостин") {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var confirmSignOut by remember { mutableStateOf(false) }
@@ -58,7 +58,7 @@ fun AccountCard(viewModel: AccountViewModel) {
             Text("Сметка", style = MaterialTheme.typography.titleMedium)
             when {
                 account.kind == AccountKind.GUEST -> {
-                    Text("Гостин", style = MaterialTheme.typography.bodyLarge)
+                    Text(guestLine, style = MaterialTheme.typography.bodyLarge)
                     Text(
                         "Поврзи Google сметка за да ја задржиш сметката. Твоите податоци остануваат исти.",
                         style = MaterialTheme.typography.bodyMedium

@@ -19,6 +19,7 @@ import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.mojrucek.app.session.IdTokenSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,7 +58,7 @@ sealed interface AuthResult {
  * New sign-in methods (e.g. email/password) only need to build an [AuthCredential] and call
  * [signInOrLink].
  */
-class AuthRepository(private val appContext: Context) {
+class AuthRepository(private val appContext: Context) : IdTokenSource {
 
     private val available = FirebaseApp.getApps(appContext).isNotEmpty()
     private val auth: FirebaseAuth? = if (available) FirebaseAuth.getInstance() else null
@@ -183,8 +184,11 @@ class AuthRepository(private val appContext: Context) {
     }
 
     /** Firebase ID token for our own server (Stage B). Null when signed out or unavailable. */
-    suspend fun idToken(forceRefresh: Boolean = false): String? =
+    override suspend fun idToken(forceRefresh: Boolean): String? =
         auth?.currentUser?.getIdToken(forceRefresh)?.await()?.token
+
+    /** The id of the signed-in account right now (null when signed out or accounts are unavailable). */
+    override val currentUid: String? get() = auth?.currentUser?.uid
 
     // ------------------------------------------------------------------------------------------
 

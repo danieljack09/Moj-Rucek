@@ -9,6 +9,10 @@ import com.mojrucek.app.repository.OwnerKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MojRucekApplication : Application() {
@@ -34,6 +38,21 @@ class MojRucekApplication : Application() {
             if (settings.reminderEnabled) {
                 ReminderScheduler.scheduleReminder(this@MojRucekApplication, settings)
             }
+        }
+
+        // Whenever the signed-in account (or its type) changes, and once at start: tell the server who it is, when needed.
+        // A newer change cancels an attempt still in progress.
+        applicationScope.launch {
+            container.authRepository.state
+                .map { it.uid to it.kind }
+                .distinctUntilChanged()
+                .collectLatest { (uid, kind) -> container.sessionTriggers.onAccount(uid, kind) }
+        }
+
+        // Keep the guest-period reminders in step with the account and the remembered answer.
+        applicationScope.launch {
+            combine(container.authRepository.state.map { it.uid }.distinctUntilChanged(), container.sessionRepository.changes) { uid, _ -> uid }
+                .collectLatest { uid -> container.guestReminders.onSession(uid, uid?.let { container.sessionRepository.cached(it) }) }
         }
 
         // Whenever the current account changes: decide about the data from before accounts (hand it over or ask

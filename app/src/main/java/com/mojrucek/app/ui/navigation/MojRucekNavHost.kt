@@ -32,6 +32,8 @@ import androidx.navigation.navArgument
 import com.mojrucek.app.di.AppContainer
 import com.mojrucek.app.ui.auth.AccountCard
 import com.mojrucek.app.ui.auth.AccountViewModel
+import com.mojrucek.app.ui.auth.GuestExpiredDialog
+import com.mojrucek.app.ui.auth.guestSettingsLine
 import com.mojrucek.app.ui.components.GenericViewModelFactory
 import com.mojrucek.app.ui.home.HomeScreen
 import com.mojrucek.app.ui.home.HomeViewModel
@@ -58,6 +60,8 @@ fun MojRucekNavHost(container: AppContainer) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = bottomNavItems.any { it.dest.route == currentRoute }
+
+    GuestExpiredDialog(container, onOpenSettings = { navController.navigate(Dest.Settings.route) })
 
     Scaffold(
         bottomBar = {
@@ -211,7 +215,7 @@ fun MojRucekNavHost(container: AppContainer) {
                 val accountVm: AccountViewModel = viewModel(factory = GenericViewModelFactory {
                     AccountViewModel(container.authRepository, container.accountSwitchRepository)
                 })
-                SettingsScreen(vm, onBack = { navController.popBackStack() }, accountCard = { AccountCard(accountVm) })
+                SettingsScreen(vm, onBack = { navController.popBackStack() }, accountCard = { AccountCard(accountVm, guestLine = guestSettingsLine(container)) })
             }
 
             composable(Dest.RecipeNew.route) {

@@ -15,6 +15,13 @@ import com.mojrucek.app.repository.RecipeRepository
 import com.mojrucek.app.repository.SettingsRepository
 import com.mojrucek.app.repository.ShoppingListRepository
 import com.mojrucek.app.repository.SharedPreferencesOwnershipPrefs
+import com.mojrucek.app.session.GuestReminderCoordinator
+import com.mojrucek.app.session.HttpSessionServer
+import com.mojrucek.app.session.WorkManagerGuestReminders
+import com.mojrucek.app.session.SessionRepository
+import com.mojrucek.app.session.SessionTriggers
+import com.mojrucek.app.session.SharedPreferencesSessionStore
+import com.mojrucek.app.session.WorkManagerRetryScheduler
 
 /**
  * Simple hand-rolled dependency container (no DI framework) — appropriate
@@ -52,6 +59,11 @@ class AppContainer(context: Context) {
         currentOwner
     )
     val accountSwitchRepository = AccountSwitchRepository(context.applicationContext, database, backupRepository, currentOwner)
+
+    /** Tells the server who is signed in and remembers its answer per account (the guest's 14 days start there). */
+    val sessionRepository = SessionRepository(HttpSessionServer(), SharedPreferencesSessionStore(context), authRepository)
+    val guestReminders = GuestReminderCoordinator(WorkManagerGuestReminders(context.applicationContext))
+    val sessionTriggers = SessionTriggers(sessionRepository, WorkManagerRetryScheduler(context.applicationContext))
 
     /** Decides whether the data from before accounts is handed over at once or the user is asked first. */
     val ownershipCoordinator = OwnershipCoordinator(
