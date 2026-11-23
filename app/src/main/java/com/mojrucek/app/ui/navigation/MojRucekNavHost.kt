@@ -194,7 +194,7 @@ fun MojRucekNavHost(container: AppContainer) {
 
             composable(Dest.Shopping.route) {
                 val vm: ShoppingViewModel = viewModel(factory = GenericViewModelFactory {
-                    ShoppingViewModel(container.shoppingListRepository)
+                    ShoppingViewModel(container.shoppingListRepository, container.recipeRepository)
                 })
                 ShoppingScreen(vm)
             }

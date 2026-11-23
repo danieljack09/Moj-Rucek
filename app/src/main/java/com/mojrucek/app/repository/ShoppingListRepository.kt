@@ -1,6 +1,8 @@
 package com.mojrucek.app.repository
 
+import android.database.sqlite.SQLiteConstraintException
 import com.mojrucek.app.data.dao.ShoppingListDao
+import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.data.entity.ShoppingListItem
 import com.mojrucek.app.domain.model.GeneratedShoppingItem
@@ -95,28 +97,100 @@ class ShoppingListRepository(
 
     suspend fun delete(item: ShoppingListItem) = dao.delete(item)
 
-    /** "Додај во домашни намирници": merges the item into inventory and removes it from the list. */
-    suspend fun addPurchasedItemToInventory(item: ShoppingListItem) {
+    /**
+     * "Додај во домашни намирници": merges [purchasedQuantity] into inventory, then removes the
+     * item from the list if it was fully bought, or keeps the remainder on the list otherwise.
+     * Returns what changed, so the purchase can be undone from the snackbar.
+     */
+    suspend fun addPurchasedItemToInventory(item: ShoppingListItem, purchasedQuantity: Double): PurchaseOutcome {
         val existing = ingredientRepository.findExistingByName(item.name)
+        var addedToInventory = true
+        var insertedId: Long? = null
         if (existing != null) {
-            ingredientRepository.mergeQuantityInto(existing, item.quantity, item.unit)
+            val merge = ingredientRepository.mergeQuantityInto(existing, purchasedQuantity, item.unit)
+            addedToInventory = merge is IngredientMergeUseCase.Result.Merged
         } else {
-            ingredientRepository.insert(
+            insertedId = ingredientRepository.insert(
                 name = item.name,
                 category = item.category,
-                quantity = item.quantity,
+                quantity = purchasedQuantity,
                 unit = item.unit,
                 expirationDateEpochDay = null,
                 lowStockThreshold = null,
                 notes = null
             )
         }
-        dao.delete(item)
+        val remaining = removeOrReduce(item, purchasedQuantity)
+        return PurchaseOutcome(
+            remainingQuantity = remaining,
+            addedToInventory = addedToInventory,
+            undo = ShoppingUndo(
+                originalItem = item,
+                inventoryBefore = existing.takeIf { addedToInventory },
+                insertedIngredientId = insertedId
+            )
+        )
     }
 
-    /** The user bought it for immediate use and does not want it added to the home inventory. */
-    suspend fun keepWithoutAddingToInventory(item: ShoppingListItem) {
+    /**
+     * The user bought [purchasedQuantity] for immediate use and does not want it added to the
+     * home inventory. Any amount still missing stays on the list.
+     */
+    suspend fun keepWithoutAddingToInventory(item: ShoppingListItem, purchasedQuantity: Double): PurchaseOutcome {
+        val remaining = removeOrReduce(item, purchasedQuantity)
+        return PurchaseOutcome(
+            remainingQuantity = remaining,
+            addedToInventory = false,
+            undo = ShoppingUndo(originalItem = item)
+        )
+    }
+
+    /** Deletes the item and returns how to put it back. */
+    suspend fun deleteWithUndo(item: ShoppingListItem): ShoppingUndo {
         dao.delete(item)
+        return ShoppingUndo(originalItem = item)
+    }
+
+    /**
+     * Reverts a purchase or delete: puts the inventory back the way it was and restores the
+     * shopping list item with its original quantity.
+     */
+    suspend fun undo(undo: ShoppingUndo) {
+        undo.inventoryBefore?.let { ingredientRepository.setQuantity(it.id, it.quantity) }
+        undo.insertedIngredientId?.let { id ->
+            ingredientRepository.getById(id)?.let { ingredientRepository.delete(it) }
+        }
+        val current = dao.getAllOnce().firstOrNull { it.id == undo.originalItem.id }
+        if (current != null) {
+            dao.update(undo.originalItem)
+        } else {
+            try {
+                dao.insert(undo.originalItem)
+            } catch (e: SQLiteConstraintException) {
+                // The id was reused in the meantime: restore it as a new row instead.
+                dao.insert(undo.originalItem.copy(id = 0))
+            }
+        }
+    }
+
+    /**
+     * Deletes [item] when [purchasedQuantity] covers it, otherwise lowers its quantity to what is
+     * still needed. Returns the quantity left on the list (0 when the item was removed).
+     */
+    private suspend fun removeOrReduce(item: ShoppingListItem, purchasedQuantity: Double): Double {
+        val remaining = item.quantity - purchasedQuantity
+        // The epsilon absorbs floating-point leftovers so a fully bought line is never kept as ~0.
+        return if (purchasedQuantity >= item.quantity || remaining <= REMAINDER_EPSILON) {
+            dao.delete(item)
+            0.0
+        } else {
+            dao.update(item.copy(quantity = remaining))
+            remaining
+        }
+    }
+
+    private companion object {
+        const val REMAINDER_EPSILON = 1e-9
     }
 
     suspend fun getAllOnce(): List<ShoppingListItem> = dao.getAllOnce()
@@ -145,3 +219,20 @@ class ShoppingListRepository(
         }
     }
 }
+
+/** Everything a purchase or delete changed, so the snackbar's "Врати" can revert it. */
+data class ShoppingUndo(
+    val originalItem: ShoppingListItem,
+    /** The inventory entry as it was before the purchase was merged into it. */
+    val inventoryBefore: Ingredient? = null,
+    /** The inventory entry the purchase created, if there was none before. */
+    val insertedIngredientId: Long? = null
+)
+
+data class PurchaseOutcome(
+    /** What is still on the shopping list after this purchase; 0 when the item is gone. */
+    val remainingQuantity: Double,
+    /** False when the item was kept out of inventory, or its unit did not match the stored one. */
+    val addedToInventory: Boolean,
+    val undo: ShoppingUndo
+)
