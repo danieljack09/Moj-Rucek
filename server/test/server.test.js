@@ -170,3 +170,32 @@ test('changing a plan by hand needs the admin login and a real registered user',
     assert.equal(await put(cookie, { userId: 'usr_unknown', plan: 'PAID' }), 404);
   } finally { await srv.stop(); }
 });
+
+test('the public delete-account page (needed for Google Play) is served as plain, safe HTML with the contact address', async () => {
+  const srv = await startServer();
+  try {
+    for (const p of ['/delete-account', '/delete-account/']) {
+      const res = await fetch(srv.base + p);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('content-type'), /text\/html/);
+      assert.match(res.headers.get('content-security-policy'), /default-src 'none'/);
+      assert.equal(res.headers.get('x-frame-options'), 'DENY');
+      const html = await res.text();
+      // Cloudflare rewrites any plain e-mail address into a script-decoded placeholder, which a page without scripts
+      // would show as "[email protected]". So the @ and the dot are written as HTML entities, which browsers show as the
+      // address and Cloudflare does not touch.
+      assert.ok(!html.includes('@'), 'no plain @ in the page (Cloudflare would obfuscate it)');
+      const decoded = html.replace(/&#([0-9]+);/g, (_, n) => String.fromCharCode(Number(n)));
+      assert.ok(decoded.includes('mojrucek@gmail.com'), 'the contact address is on the page');
+      // No mailto: link either: Cloudflare turns every one into a /cdn-cgi/ link and adds a script our page does not allow.
+      assert.ok(!/mailto:/i.test(html), 'no mailto link');
+      assert.ok(html.includes('Избриши сметка'), 'it names the button in the app');
+      assert.ok(html.includes('Delete your account'), 'it has an English part');
+      assert.ok(!/<script/i.test(html), 'no scripts');
+    }
+    assert.equal((await fetch(srv.base + '/delete-account', { method: 'POST' })).status, 404);
+    assert.equal((await fetch(srv.base + '/delete-account', { method: 'HEAD' })).status, 200);
+    // the page needs no sign-in and does not unlock anything else
+    assert.equal((await fetch(srv.base + '/admin/api/recipes')).status, 401);
+  } finally { await srv.stop(); }
+});
