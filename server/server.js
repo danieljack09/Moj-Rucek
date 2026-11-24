@@ -28,6 +28,15 @@ const COOKIE = 'rucek_admin';
 const ADMIN_HTML = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'));
 // Public page required by Google Play: how to delete an account and its data (in the app, or by email).
 const DELETE_ACCOUNT_HTML = fs.readFileSync(path.join(__dirname, 'public', 'delete-account.html'));
+// Public privacy policy (Macedonian), also required by Google Play.
+const PRIVACY_HTML = fs.readFileSync(path.join(__dirname, 'public', 'privacy.html'));
+const PUBLIC_PAGE_HEADERS = {
+  // Plain text pages: no scripts, nothing embedded, not framed.
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Cache-Control': 'public, max-age=300',
+};
 
 // ---------- accounts (Firebase identity) ----------
 // Off until FIREBASE_PROJECT_ID is set: /api/session and /api/me then answer 503, everything else works as before.
@@ -210,15 +219,8 @@ async function handle(req, res) {
 
   if (p === '/health') return send(res, 200, { ok: true });
 
-  if (p === '/delete-account' && (m === 'GET' || m === 'HEAD')) {
-    return send(res, 200, DELETE_ACCOUNT_HTML, {
-      // Plain text page: no scripts, nothing embedded, not framed.
-      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
-      'X-Frame-Options': 'DENY',
-      'Referrer-Policy': 'no-referrer',
-      'Cache-Control': 'public, max-age=300',
-    });
-  }
+  if (p === '/delete-account' && (m === 'GET' || m === 'HEAD')) return send(res, 200, DELETE_ACCOUNT_HTML, PUBLIC_PAGE_HEADERS);
+  if (p === '/privacy' && (m === 'GET' || m === 'HEAD')) return send(res, 200, PRIVACY_HTML, PUBLIC_PAGE_HEADERS);
 
   // Public, read-only: what the Android app syncs.
   if (p === '/api/catalog' && m === 'GET') {

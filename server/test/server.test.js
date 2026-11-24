@@ -199,3 +199,28 @@ test('the public delete-account page (needed for Google Play) is served as plain
     assert.equal((await fetch(srv.base + '/admin/api/recipes')).status, 401);
   } finally { await srv.stop(); }
 });
+
+test('the public privacy policy (Macedonian) is served as plain, safe HTML, with the contact address and without Cloudflare-triggering parts', async () => {
+  const srv = await startServer();
+  try {
+    for (const p of ['/privacy', '/privacy/']) {
+      const res = await fetch(srv.base + p);
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('content-type'), /text\/html/);
+      assert.match(res.headers.get('content-security-policy'), /default-src 'none'/);
+      assert.equal(res.headers.get('x-frame-options'), 'DENY');
+      const html = await res.text();
+      assert.match(html, /<html lang="mk">/);
+      assert.ok(!html.includes('@'), 'no plain @ (Cloudflare would obfuscate it)');
+      assert.ok(!/mailto:/i.test(html), 'no mailto link');
+      assert.ok(!/<script/i.test(html), 'no scripts');
+      const decoded = html.replace(/&#([0-9]+);/g, (_, n) => String.fromCharCode(Number(n)));
+      assert.ok(decoded.includes('mojrucek@gmail.com'), 'the contact address is on the page');
+      for (const heading of ['Кои податоци се користат', 'Со кого се споделуваат', 'Колку долго се чуваат', 'Твои права', 'Деца']) {
+        assert.ok(html.includes(heading), heading);
+      }
+      assert.ok(html.includes('href="/delete-account"'), 'it points to the deletion page');
+    }
+    assert.equal((await fetch(srv.base + '/privacy', { method: 'POST' })).status, 404);
+  } finally { await srv.stop(); }
+});
