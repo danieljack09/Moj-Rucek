@@ -51,6 +51,9 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
         }
     }
 
+    /** Applies a catalog answer as if it had just been downloaded (used by tests; does not remember a sync time). */
+    internal suspend fun applyForTest(body: String) = apply(json.decodeFromString<CatalogResponse>(body))
+
     private fun download(url: String): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
@@ -90,14 +93,16 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
             val recipe = Recipe(
                 id = existing?.id ?: 0,
                 name = r.name,
-                description = r.description,
+                // The description, steps, notes and tags of a server recipe are NOT kept in the recipes table, even if the
+                // server still sends them: they exist only while the server has unlocked them (UnlockedRecipeDetail).
+                description = null,
                 servings = r.servings,
                 prepTimeMinutes = r.prepTimeMinutes,
                 cookTimeMinutes = r.cookTimeMinutes,
-                instructionSteps = r.instructionSteps,
+                instructionSteps = emptyList(),
                 category = RecipeCategory.fromStorageName(r.category),
-                tags = r.tags,
-                notes = r.notes,
+                tags = emptyList(),
+                notes = null,
                 imageUri = existing?.imageUri,
                 isFavorite = existing?.isFavorite ?: false,
                 isUserCreated = false,

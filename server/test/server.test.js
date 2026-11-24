@@ -98,3 +98,75 @@ test('DELETE /api/me needs a valid sign-in: without one it is 401 (503 when acco
     assert.equal((await call(srv, 'PUT', '/api/me')).status, 404);
   } finally { await srv.stop(); }
 });
+
+test('the new list endpoints need a sign-in (503 when accounts are off, 401 without a valid token), wrong methods are 404', async () => {
+  const off = await startServer();
+  try {
+    assert.equal((await call(off, 'POST', '/api/generations', { authorization: 'Bearer a.b.c' })).status, 503);
+    assert.equal((await call(off, 'GET', '/api/unlocks', { authorization: 'Bearer a.b.c' })).status, 503);
+  } finally { await off.stop(); }
+  const srv = await startServer({ FIREBASE_PROJECT_ID: 'test-project' });
+  try {
+    assert.equal((await call(srv, 'POST', '/api/generations')).status, 401);
+    assert.equal((await call(srv, 'POST', '/api/generations', { authorization: 'Bearer not-a-jwt' })).status, 401);
+    assert.equal((await call(srv, 'GET', '/api/unlocks')).status, 401);
+    assert.equal((await call(srv, 'GET', '/api/unlocks', { authorization: 'Bearer not-a-jwt' })).status, 401);
+    assert.equal((await call(srv, 'GET', '/api/generations')).status, 404);
+    assert.equal((await call(srv, 'POST', '/api/unlocks')).status, 404);
+  } finally { await srv.stop(); }
+});
+
+async function adminCookie(srv) {
+  const res = await fetch(srv.base + '/admin/api/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'test-password-123' }),
+  });
+  return res.headers.get('set-cookie').split(';')[0];
+}
+const RECIPE = {
+  name: 'Тест рецепт', description: 'тајниот опис', servings: 3, prepTimeMinutes: 5, cookTimeMinutes: 20, category: 'PASTA',
+  tags: ['брзо'], instructionSteps: ['сецкај', 'вари'], notes: 'тајна забелешка',
+  ingredients: [{ name: 'Паста', quantity: 300, unit: 'GRAM' }],
+};
+async function addRecipe(srv) {
+  const cookie = await adminCookie(srv);
+  const res = await fetch(srv.base + '/admin/api/recipes', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify(RECIPE) });
+  assert.equal(res.status, 201);
+}
+
+test('the public catalog sends everything by default (with locked:false), as before', async () => {
+  const srv = await startServer();
+  try {
+    await addRecipe(srv);
+    const r = (await call(srv, 'GET', '/api/catalog?since=0')).body.recipes[0];
+    assert.equal(r.description, 'тајниот опис');
+    assert.deepEqual(r.instructionSteps, ['сецкај', 'вари']);
+    assert.equal(r.locked, false);
+  } finally { await srv.stop(); }
+});
+
+test('with CATALOG_LOCKED=1 the public catalog keeps name, times and ingredients but not description, steps, notes or tags', async () => {
+  const srv = await startServer({ CATALOG_LOCKED: '1' });
+  try {
+    await addRecipe(srv);
+    const text = JSON.stringify((await call(srv, 'GET', '/api/catalog?since=0')).body);
+    for (const secret of ['тајниот опис', 'сецкај', 'вари', 'тајна забелешка', 'брзо']) assert.ok(!text.includes(secret), secret);
+    const r = JSON.parse(text).recipes[0];
+    assert.equal(r.name, 'Тест рецепт');
+    assert.equal(r.cookTimeMinutes, 20);
+    assert.equal(r.ingredients[0].name, 'Паста');
+    assert.equal(r.locked, true);
+    assert.deepEqual(r.instructionSteps, []);
+  } finally { await srv.stop(); }
+});
+
+test('changing a plan by hand needs the admin login and a real registered user', async () => {
+  const srv = await startServer();
+  try {
+    const put = (cookie, body) => fetch(srv.base + '/admin/api/users/plan', {
+      method: 'PUT', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body),
+    }).then((r) => r.status);
+    assert.equal(await put(null, { userId: 'usr_x', plan: 'PAID' }), 401);
+    const cookie = await adminCookie(srv);
+    assert.equal(await put(cookie, { userId: 'usr_unknown', plan: 'PAID' }), 404);
+  } finally { await srv.stop(); }
+});

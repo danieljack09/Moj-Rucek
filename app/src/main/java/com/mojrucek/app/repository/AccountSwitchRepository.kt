@@ -109,6 +109,7 @@ class AccountSwitchRepository(
             database.ingredientDao().deleteAll(ownerKey)    // the pantry; catalog_ingredients is untouched
             database.recipeDao().deleteLocalOnly(ownerKey)  // the account's own recipes; ingredient lines cascade
             database.favoriteDao().removeAll(ownerKey)      // the guest's favourites; other accounts' favourites stay
+            database.unlockedDetailsDao().deleteAll(ownerKey) // the guest's unlocked recipe details
             true
         }
     }

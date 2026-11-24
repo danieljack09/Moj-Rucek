@@ -4,6 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 const { HttpError } = require('./lib/http-error');
+const { lockedView } = require('./limits');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'catalog.db');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -225,6 +226,20 @@ function getRecipe(id) {
   return recipeOut(r);
 }
 
+/** Full details of the recipes that exist and are not deleted, in the order of [ids]. */
+function getRecipesByIds(ids) {
+  const out = [];
+  for (const id of ids) {
+    const r = db.prepare('SELECT * FROM recipes WHERE id = ? AND deleted = 0').get(id);
+    if (r) out.push(recipeOut(r));
+  }
+  return out;
+}
+
+function allRecipesFull() {
+  return listRecipes();
+}
+
 function writeRecipeLines(recipeId, ingredients) {
   db.prepare('DELETE FROM recipe_ingredients WHERE recipe_id = ?').run(recipeId);
   const ins = db.prepare(
@@ -269,7 +284,7 @@ function deleteRecipe(id) {
 // ---------- public catalog for the app ----------
 
 /** Everything changed at or after `since` (epoch ms), including deletions. since=0 → full catalog. */
-function catalogSince(since) {
+function catalogSince(since, { locked = false } = {}) {
   const serverTime = now();
   const ingredients = db
     .prepare('SELECT * FROM ingredients WHERE updated_at >= ? AND updated_at < ? ORDER BY id')
@@ -278,7 +293,8 @@ function catalogSince(since) {
   const recipes = db
     .prepare('SELECT * FROM recipes WHERE updated_at >= ? AND updated_at < ? ORDER BY id')
     .all(since, serverTime)
-    .map(recipeOut);
+    .map(recipeOut)
+    .map((r) => (locked ? lockedView(r) : { ...r, locked: false }));
   // Clients store `serverTime` and send it back as `since`; anything stamped
   // before it is already included, anything later is picked up next time.
   return { serverTime, ingredients, recipes };
@@ -291,4 +307,5 @@ module.exports = {
   listIngredients, saveIngredient, deleteIngredient,
   listRecipes, getRecipe, saveRecipe, deleteRecipe,
   catalogSince,
+  getRecipesByIds, allRecipesFull,
 };

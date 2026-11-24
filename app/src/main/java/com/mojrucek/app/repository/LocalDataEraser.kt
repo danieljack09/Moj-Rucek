@@ -17,6 +17,7 @@ class LocalDataEraser(private val database: AppDatabase) {
             database.ingredientDao().deleteAll(ownerKey)
             database.recipeDao().deleteLocalOnly(ownerKey)
             database.favoriteDao().removeAll(ownerKey)
+            database.unlockedDetailsDao().deleteAll(ownerKey)
         }
     }
 }

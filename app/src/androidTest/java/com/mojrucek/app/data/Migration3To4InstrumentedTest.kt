@@ -150,7 +150,7 @@ class Migration3To4InstrumentedTest {
         createV3().close()
         helper.closeWhenFinished(
             Room.databaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+                .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
                 .build().also { room ->
                     val ingredients = room.ingredientDao().getAllOnce("")
                     assertEquals(setOf("Јајца", "Ориз"), ingredients.map { it.name }.toSet())

@@ -10,6 +10,7 @@ const { createGoogleCertKeyCache, createJwksKeyCache } = require('./lib/jwt');
 const { createFirebaseIdTokenVerifier } = require('./lib/firebase-auth');
 const { createAppCheckVerifier } = require('./lib/app-check');
 const { createUserStore } = require('./users');
+const { createLimits } = require('./limits');
 const { createIdentity, clientAddress } = require('./identity');
 const { INGREDIENT_CATEGORIES, RECIPE_CATEGORIES, UNITS } = require('./constants');
 
@@ -46,6 +47,11 @@ if (APPCHECK_MODE !== 'off' && !FIREBASE_PROJECT_NUMBER) {
 const ALLOWED_PROVIDERS = (process.env.ALLOWED_PROVIDERS || 'anonymous,google.com').split(',').map((v) => v.trim()).filter(Boolean);
 
 const users = createUserStore(store.db);
+const limits = createLimits(store.db, users, { getMany: store.getRecipesByIds, all: store.allRecipesFull });
+
+// CATALOG_LOCKED=1: the public catalog stops sending description, steps, notes and tags (they come only with an
+// approved list, see /api/generations). Off by default until the app version that understands it is out.
+const CATALOG_LOCKED = process.env.CATALOG_LOCKED === '1';
 const identity = createIdentity({
   idTokenVerifier: FIREBASE_PROJECT_ID
     ? createFirebaseIdTokenVerifier({
@@ -205,7 +211,7 @@ async function handle(req, res) {
   // Public, read-only: what the Android app syncs.
   if (p === '/api/catalog' && m === 'GET') {
     const since = Math.max(0, Number(url.searchParams.get('since')) || 0);
-    return send(res, 200, store.catalogSince(since));
+    return send(res, 200, store.catalogSince(since, { locked: CATALOG_LOCKED }));
   }
 
   // The app's account endpoints. Authorization: Bearer <Firebase ID token>.
@@ -218,6 +224,20 @@ async function handle(req, res) {
     const row = users.findByUid(who.uid);
     if (!row) throw new HttpError(404, 'Нема отворена сесија. Повикај /api/session.');
     return send(res, 200, users.publicShape(row));
+  }
+
+  // Making a shopping list: the server decides (Guest/Free limits, 72 h, Paid). Safe to repeat with the same requestId.
+  if (p === '/api/generations' && m === 'POST') {
+    const who = await identity.authenticate(req, clientAddress(req));
+    const body = await readJson(req);
+    const user = users.upsertSession(who);
+    return send(res, 200, limits.generate(user, body.recipeIds, body.requestId));
+  }
+
+  // Where the user stands, and the details unlocked right now.
+  if (p === '/api/unlocks' && m === 'GET') {
+    const who = await identity.authenticate(req, clientAddress(req));
+    return send(res, 200, limits.state(users.upsertSession(who)));
   }
 
   // Account deletion: removes the caller's own record only. Already deleted (or never opened) is also 204.
@@ -258,6 +278,13 @@ async function handle(req, res) {
     if (!isAuthed(req)) throw new HttpError(401, 'Не си најавен.');
     const parts = p.slice('/admin/api/'.length).split('/');
     const [resource, idRaw] = parts;
+    // Plan changes by hand (until billing exists): PUT /admin/api/users/plan {userId, plan}
+    if (resource === 'users' && idRaw === 'plan' && m === 'PUT') {
+      const body = await readJson(req);
+      if (!users.setPlan(String(body.userId ?? ''), body.plan)) throw new HttpError(404, 'Корисникот не е пронајден или не е регистриран.');
+      return send(res, 200, { ok: true });
+    }
+
     const id = idRaw === undefined ? null : Number(idRaw);
     if (idRaw !== undefined && !Number.isInteger(id)) throw new HttpError(404, 'Не е пронајдено.');
 
@@ -286,7 +313,7 @@ async function handle(req, res) {
 
 const server = http.createServer((req, res) => {
   handle(req, res).catch((err) => {
-    if (err instanceof HttpError) return send(res, err.status, { error: err.message });
+    if (err instanceof HttpError) return send(res, err.status, { error: err.message, ...err.extra });
     console.error(err);
     send(res, 500, { error: 'Грешка на серверот.' });
   });

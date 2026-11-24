@@ -22,6 +22,8 @@ import com.mojrucek.app.data.entity.PlannedMeal
 import com.mojrucek.app.data.entity.Recipe
 import com.mojrucek.app.data.entity.RecipeFavorite
 import com.mojrucek.app.data.entity.RecipeIngredient
+import com.mojrucek.app.data.entity.UnlockedRecipeDetail
+import com.mojrucek.app.data.dao.UnlockedDetailsDao
 import com.mojrucek.app.data.entity.ShoppingListItem
 import com.mojrucek.app.data.entity.WeeklyPlan
 import java.io.File
@@ -36,9 +38,10 @@ import java.io.File
         WeeklyPlan::class,
         AppSettings::class,
         CatalogIngredient::class,
-        RecipeFavorite::class
+        RecipeFavorite::class,
+        UnlockedRecipeDetail::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -52,6 +55,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun catalogDao(): CatalogDao
     abstract fun ownershipDao(): OwnershipDao
     abstract fun favoriteDao(): FavoriteDao
+    abstract fun unlockedDetailsDao(): UnlockedDetailsDao
 
     companion object {
         @Volatile
@@ -60,7 +64,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val DB_NAME = "mojrucek.db"
 
         /** Must match `version` in the @Database annotation above. */
-        const val SCHEMA_VERSION = 4
+        const val SCHEMA_VERSION = 5
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
@@ -77,7 +81,7 @@ abstract class AppDatabase : RoomDatabase() {
                         // Continue without the extra copy.
                     }
                     Room.databaseBuilder(app, AppDatabase::class.java, DB_NAME)
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                         .build()
                         .also { instance = it }
                 }
@@ -116,6 +120,32 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE app_settings")
                 db.execSQL("ALTER TABLE app_settings_new RENAME TO app_settings")
+            }
+        }
+
+        /**
+         * Version 5: the table for recipe details unlocked by the server (see UnlockedRecipeDetail), and the removal of
+         * the description, steps, notes and tags that earlier versions saved for SERVER recipes in the recipes table.
+         * From now on those exist only while the server has unlocked them. The user's own recipes are never touched.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS unlocked_recipe_details (" +
+                        "ownerUid TEXT NOT NULL, " +
+                        "serverId INTEGER NOT NULL, " +
+                        "description TEXT, " +
+                        "instructionSteps TEXT NOT NULL, " +
+                        "notes TEXT, " +
+                        "tags TEXT NOT NULL, " +
+                        "unlockedUntil INTEGER, " +
+                        "savedAt INTEGER NOT NULL, " +
+                        "PRIMARY KEY(ownerUid, serverId))"
+                )
+                db.execSQL(
+                    "UPDATE recipes SET description = NULL, instructionSteps = '[]', notes = NULL, tags = '[]' " +
+                        "WHERE isUserCreated = 0 AND serverId IS NOT NULL"
+                )
             }
         }
 

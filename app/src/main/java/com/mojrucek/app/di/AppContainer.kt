@@ -64,6 +64,15 @@ class AppContainer(context: Context) {
     private val sessionStore = SharedPreferencesSessionStore(context)
     val sessionRepository = SessionRepository(HttpSessionServer(), sessionStore, authRepository)
 
+    /** Server time now: the phone's clock corrected by the difference measured at the last server answer. */
+    private fun serverNowMs(): Long {
+        val offset = authRepository.currentUid?.let { sessionRepository.cached(it)?.clockOffsetMs } ?: 0L
+        return System.currentTimeMillis() + offset
+    }
+
+    /** Recipe details the server has unlocked for the signed-in account (empty until a list is made). */
+    val unlockedDetailsRepository = com.mojrucek.app.repository.UnlockedDetailsRepository(database.unlockedDetailsDao(), currentOwner, ::serverNowMs)
+
     private val pendingErasure = com.mojrucek.app.session.SharedPreferencesPendingErasure(context)
     private val localDataEraser = com.mojrucek.app.repository.LocalDataEraser(database)
 

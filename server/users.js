@@ -45,6 +45,8 @@ function createUserStore(db, { now = Date.now, guestDays = GUEST_DAYS } = {}) {
   `);
 
   const remove = db.prepare('DELETE FROM users WHERE firebase_uid = ?');
+  const setPlanSql = db.prepare("UPDATE users SET plan = ? WHERE id = ? AND kind = 'REGISTERED'");
+  const deleteHooks = [];
 
   const newId = () => 'usr_' + crypto.randomBytes(16).toString('base64url');
 
@@ -71,7 +73,22 @@ function createUserStore(db, { now = Date.now, guestDays = GUEST_DAYS } = {}) {
      * Anything else the server keeps per user in the future must be removed here too.
      */
     deleteByUid(uid) {
-      return transaction(() => remove.run(uid).changes > 0);
+      return transaction(() => {
+        const row = selectByUid.get(uid);
+        if (row) for (const hook of deleteHooks) hook(row.id);   // other tables that hold this user's records
+        return remove.run(uid).changes > 0;
+      });
+    },
+
+    /** Registers something to run (inside the same transaction) with the user id whenever a user is deleted. */
+    onDelete(hook) {
+      deleteHooks.push(hook);
+    },
+
+    /** FREE <-> PAID for a registered user (set by hand until billing exists). A guest is never changed. Returns true if changed. */
+    setPlan(userId, plan) {
+      if (plan !== 'FREE' && plan !== 'PAID') throw new Error('plan must be FREE or PAID');
+      return setPlanSql.run(plan, userId).changes > 0;
     },
 
     /** Idempotent: creates the user on the first call, updates it afterwards. Returns the stored row. */
