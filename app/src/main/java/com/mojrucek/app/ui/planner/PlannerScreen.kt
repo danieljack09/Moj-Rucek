@@ -40,7 +40,7 @@ import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit) {
+fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit, onOpenSettings: () -> Unit = {}) {
     val state by viewModel.uiState.collectAsState()
     var dayBeingEdited by remember { mutableStateOf<Int?>(null) }
     var pickerRecipes by remember { mutableStateOf<List<RecipeWithIngredients>>(emptyList()) }
@@ -87,8 +87,16 @@ fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit) {
                 }
             }
 
+            state.nextListLine?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
             Button(
                 onClick = viewModel::generateShoppingList,
+                enabled = !state.generating,
                 modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
                 Text(if (state.shoppingListGenerated) "Регенерирај листа за пазарење" else "Генерирај листа за пазарење")
@@ -104,6 +112,24 @@ fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit) {
             onPick = { recipeId -> viewModel.setMeal(day, recipeId); dayBeingEdited = null },
             onClear = { viewModel.setMeal(day, null); dayBeingEdited = null },
             onCopyFrom = { fromDay -> viewModel.copyMeal(fromDay, day); dayBeingEdited = null }
+        )
+    }
+
+    state.limitNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissLimitNotice,
+            title = { Text(notice.title) },
+            text = { Text(notice.text) },
+            confirmButton = {
+                if (notice.linkGoogle) {
+                    TextButton(onClick = { viewModel.dismissLimitNotice(); onOpenSettings() }) { Text("Поврзи со Google") }
+                } else {
+                    TextButton(onClick = viewModel::dismissLimitNotice) { Text("Во ред") }
+                }
+            },
+            dismissButton = if (notice.linkGoogle) {
+                { TextButton(onClick = viewModel::dismissLimitNotice) { Text("Подоцна") } }
+            } else null
         )
     }
 

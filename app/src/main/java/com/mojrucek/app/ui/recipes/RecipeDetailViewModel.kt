@@ -10,6 +10,8 @@ import com.mojrucek.app.domain.unit.UnitConverter
 import com.mojrucek.app.repository.IngredientRepository
 import com.mojrucek.app.repository.RecipeRepository
 import com.mojrucek.app.repository.ShoppingListRepository
+import com.mojrucek.app.repository.UnlockedDetailsRepository
+import com.mojrucek.app.domain.limits.RecipeAccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,14 +26,17 @@ data class RecipeDetailUiState(
     val match: RecipeMatchResult? = null,
     val lastAddedToShoppingList: Boolean = false,
     val lastCooked: Boolean = false,
-    val notFound: Boolean = false
+    val notFound: Boolean = false,
+    /** What may be shown of description, steps and notes: own recipe, unlocked by the server, or locked. */
+    val access: RecipeAccess = RecipeAccess.Locked
 )
 
 class RecipeDetailViewModel(
     private val recipeId: Long,
     private val recipeRepository: RecipeRepository,
     private val ingredientRepository: IngredientRepository,
-    private val shoppingListRepository: ShoppingListRepository
+    private val shoppingListRepository: ShoppingListRepository,
+    private val unlockedDetailsRepository: UnlockedDetailsRepository
 ) : ViewModel() {
 
     private val desiredServings = MutableStateFlow<Int?>(null)
@@ -41,8 +46,9 @@ class RecipeDetailViewModel(
         recipeRepository.observeWithIngredients(recipeId),
         ingredientRepository.observeAll(),
         desiredServings,
-        oneShotFlags
-    ) { recipe, inventory, desired, flags ->
+        oneShotFlags,
+        unlockedDetailsRepository.observeUnlocked()
+    ) { recipe, inventory, desired, flags, unlocked ->
         if (recipe == null) {
             RecipeDetailUiState(isLoading = false, notFound = true)
         } else {
@@ -62,7 +68,11 @@ class RecipeDetailViewModel(
                 desiredServings = servings,
                 match = match,
                 lastAddedToShoppingList = flags.first,
-                lastCooked = flags.second
+                lastCooked = flags.second,
+                access = when {
+                    recipe.recipe.isUserCreated || recipe.recipe.serverId == null -> RecipeAccess.Own
+                    else -> unlocked[recipe.recipe.serverId] ?: RecipeAccess.Locked
+                }
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RecipeDetailUiState())

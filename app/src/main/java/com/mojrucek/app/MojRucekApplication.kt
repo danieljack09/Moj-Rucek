@@ -46,7 +46,14 @@ class MojRucekApplication : Application() {
             container.authRepository.state
                 .map { it.uid to it.kind }
                 .distinctUntilChanged()
-                .collectLatest { (uid, kind) -> container.sessionTriggers.onAccount(uid, kind) }
+                .collectLatest { (uid, kind) ->
+                    container.sessionTriggers.onAccount(uid, kind)
+                    // Quietly learn where the account stands with the list rules and restore what is unlocked.
+                    if (uid != null) {
+                        container.unlockedDetailsRepository.pruneExpired()
+                        container.listPermission.refreshState()
+                    }
+                }
         }
 
         // A deletion that was interrupted after the server record was removed: finish erasing the phone data.

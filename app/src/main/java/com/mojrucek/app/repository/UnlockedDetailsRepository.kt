@@ -5,6 +5,7 @@ import com.mojrucek.app.data.entity.UnlockedRecipeDetail
 import com.mojrucek.app.domain.limits.RecipeAccess
 import com.mojrucek.app.domain.limits.RecipeAccessRules
 import com.mojrucek.app.domain.limits.RecipeDetails
+import com.mojrucek.app.session.UnlockedStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -28,7 +29,11 @@ class UnlockedDetailsRepository(
     private val owner: CurrentOwner,
     private val serverNowMs: () -> Long,
     private val deviceNowMs: () -> Long = System::currentTimeMillis
-) {
+) : UnlockedStore {
+    override suspend fun isUnlocked(serverId: Long): Boolean = accessFor(isOwn = false, serverId = serverId) is RecipeAccess.Unlocked
+
+    override suspend fun replace(uid: String, payloads: List<UnlockedPayload>, unlockedUntil: Long?) = replaceUnlocked(uid, payloads, unlockedUntil)
+
     /**
      * Replaces everything unlocked for [ownerKey] with [payloads] (the answer of the server for a new list, or
      * the state restored at sign-in). [unlockedUntil] is the server deadline; null for Paid.

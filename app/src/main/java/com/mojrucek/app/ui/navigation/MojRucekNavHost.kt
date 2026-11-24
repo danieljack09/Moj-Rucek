@@ -180,7 +180,10 @@ fun MojRucekNavHost(container: AppContainer) {
 
             composable(Dest.Planner.route) {
                 val vm: PlannerViewModel = viewModel(factory = GenericViewModelFactory {
-                    PlannerViewModel(container.plannerRepository, container.recipeRepository, container.ingredientRepository, container.settingsRepository)
+                    PlannerViewModel(
+                        container.plannerRepository, container.recipeRepository, container.ingredientRepository, container.settingsRepository,
+                        container.listPermission, { container.authRepository.currentUid }
+                    )
                 })
                 // One-shot: set when arriving from the Home "Неделен потсетник" card.
                 // Reuses the Planner's own week navigation: this week, then +1 = upcoming week.
@@ -193,7 +196,8 @@ fun MojRucekNavHost(container: AppContainer) {
                 }
                 PlannerScreen(
                     viewModel = vm,
-                    onOpenRecipe = { id -> navController.navigate(Dest.RecipeDetail.path(id)) }
+                    onOpenRecipe = { id -> navController.navigate(Dest.RecipeDetail.path(id)) },
+                    onOpenSettings = { navController.navigate(Dest.Settings.route) }
                 )
             }
 
@@ -260,7 +264,7 @@ fun MojRucekNavHost(container: AppContainer) {
             ) { entry ->
                 val recipeId = entry.arguments?.getLong("recipeId") ?: 0L
                 val vm: RecipeDetailViewModel = viewModel(factory = GenericViewModelFactory {
-                    RecipeDetailViewModel(recipeId, container.recipeRepository, container.ingredientRepository, container.shoppingListRepository)
+                    RecipeDetailViewModel(recipeId, container.recipeRepository, container.ingredientRepository, container.shoppingListRepository, container.unlockedDetailsRepository)
                 })
                 RecipeDetailScreen(
                     viewModel = vm,

@@ -73,12 +73,20 @@ class AppContainer(context: Context) {
     /** Recipe details the server has unlocked for the signed-in account (empty until a list is made). */
     val unlockedDetailsRepository = com.mojrucek.app.repository.UnlockedDetailsRepository(database.unlockedDetailsDao(), currentOwner, ::serverNowMs)
 
+    private val limitStateStore = com.mojrucek.app.session.SharedPreferencesLimitStateStore(context)
+    private val pendingListRequests = com.mojrucek.app.session.SharedPreferencesPendingRequests(context)
+
+    /** Asks the server before a shopping list that involves server recipes is made (the Guest/Free/Paid rules). */
+    val listPermission = com.mojrucek.app.session.ListPermission(
+        com.mojrucek.app.session.HttpGenerationServer(), authRepository, unlockedDetailsRepository, limitStateStore, pendingListRequests
+    )
+
     private val pendingErasure = com.mojrucek.app.session.SharedPreferencesPendingErasure(context)
     private val localDataEraser = com.mojrucek.app.repository.LocalDataEraser(database)
 
     /** Deleting the signed-in account. [activityContext] is the Activity (the Google picker needs it); null only for finishing an interrupted deletion. */
     fun accountDeletion(activityContext: Context?) = com.mojrucek.app.session.AccountDeletion(
-        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext),
+        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests),
         pendingErasure
     )
     val guestReminders = GuestReminderCoordinator(WorkManagerGuestReminders(context.applicationContext))

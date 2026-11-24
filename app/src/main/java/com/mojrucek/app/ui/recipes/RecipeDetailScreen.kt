@@ -50,6 +50,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mojrucek.app.domain.model.MatchStatus
+import com.mojrucek.app.domain.limits.LimitTexts
+import com.mojrucek.app.domain.limits.RecipeAccess
 import com.mojrucek.app.ui.components.formatQuantityWithUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -135,8 +137,13 @@ fun RecipeDetailScreen(
 
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             item {
-                if (!recipe.description.isNullOrBlank()) {
-                    Text(recipe.description, style = MaterialTheme.typography.bodyMedium)
+                val description = when (val a = state.access) {
+                    RecipeAccess.Own -> recipe.description
+                    is RecipeAccess.Unlocked -> a.details.description
+                    RecipeAccess.Locked -> null
+                }
+                if (!description.isNullOrBlank()) {
+                    Text(description, style = MaterialTheme.typography.bodyMedium)
                     Spacer()
                 }
                 Text(
@@ -224,14 +231,31 @@ fun RecipeDetailScreen(
 
             item {
                 Spacer()
-                Text("Чекори", style = MaterialTheme.typography.titleMedium)
-                recipe.instructionSteps.forEachIndexed { index, step ->
-                    Text("${index + 1}. $step", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 6.dp))
+                val steps: List<String>
+                val notes: String?
+                when (val a = state.access) {
+                    RecipeAccess.Own -> { steps = recipe.instructionSteps; notes = recipe.notes }
+                    is RecipeAccess.Unlocked -> { steps = a.details.instructionSteps; notes = a.details.notes }
+                    RecipeAccess.Locked -> { steps = emptyList(); notes = null }
                 }
-                if (!recipe.notes.isNullOrBlank()) {
-                    Spacer()
-                    Text("Белешки", style = MaterialTheme.typography.titleMedium)
-                    Text(recipe.notes, style = MaterialTheme.typography.bodyMedium)
+                if (state.access == RecipeAccess.Locked) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(LimitTexts.LOCKED_TITLE, style = MaterialTheme.typography.titleMedium)
+                            Spacer()
+                            Text(LimitTexts.LOCKED_TEXT, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                } else {
+                    Text("Чекори", style = MaterialTheme.typography.titleMedium)
+                    steps.forEachIndexed { index, step ->
+                        Text("${index + 1}. $step", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 6.dp))
+                    }
+                    if (!notes.isNullOrBlank()) {
+                        Spacer()
+                        Text("Белешки", style = MaterialTheme.typography.titleMedium)
+                        Text(notes, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
                 Spacer()
             }

@@ -19,7 +19,9 @@ class RealDeletionSteps(
     private val server: AccountServer,
     private val eraser: LocalDataEraser,
     private val sessions: SessionStore,
-    private val activityContext: Context?
+    private val activityContext: Context?,
+    private val limits: LimitStateStore? = null,
+    private val listRequests: PendingRequestStore? = null
 ) : DeletionSteps {
 
     override val currentUid: String? get() = auth.currentUid
@@ -55,5 +57,7 @@ class RealDeletionSteps(
     override suspend fun eraseLocal(uid: String) {
         eraser.eraseAccount(uid)
         sessions.forget(uid)
+        limits?.forget(uid)
+        listRequests?.clear(uid)
     }
 }
