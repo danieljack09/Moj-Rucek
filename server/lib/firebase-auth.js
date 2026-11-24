@@ -2,8 +2,8 @@
 
 const { TokenError, decode, verifyRs256 } = require('./jwt');
 
-/** Providers we accept. `custom` (server-minted tokens) and `password` (not offered yet) are NOT in the default list. */
-const DEFAULT_ALLOWED_PROVIDERS = ['anonymous', 'google.com'];
+/** Providers we accept. `custom` (server-minted tokens) is NOT in the default list. */
+const DEFAULT_ALLOWED_PROVIDERS = ['anonymous', 'google.com', 'password'];
 
 /**
  * Verifies a Firebase Authentication ID token the way Google documents it, with node:crypto only:
@@ -42,7 +42,12 @@ function createFirebaseIdTokenVerifier({ projectId, getKey, allowedProviders = D
       const provider = payload.firebase && payload.firebase.sign_in_provider;
       if (typeof provider !== 'string' || !allowed.has(provider)) throw new TokenError('provider_not_allowed');
 
-      return { uid: payload.sub, provider, issuedAt: payload.iat, expiresAt: payload.exp };
+      // An email/password account whose email is NOT verified is not a registered user yet: anyone can type any address.
+      // It counts as a guest (an existing guest stays a guest, a brand-new one starts the 14 days) until the token
+      // says the email is verified; only then does the server upgrade it to a registered Free user.
+      const verified = payload.email_verified === true;
+      const effective = provider === 'password' && !verified ? 'anonymous' : provider;
+      return { uid: payload.sub, provider: effective, signInProvider: provider, emailVerified: verified, issuedAt: payload.iat, expiresAt: payload.exp };
     },
   };
 }

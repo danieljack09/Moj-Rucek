@@ -49,6 +49,7 @@ fun AccountCard(viewModel: AccountViewModel, guestLine: String = "Гостин")
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var confirmSignOut by remember { mutableStateOf(false) }
+    var showEmail by remember { mutableStateOf(false) }
     val account = state.account
     // Not configured (debug fallback) or signed out (the gate shows Welcome instead): nothing to show.
     if (!account.available || !account.signedIn) return
@@ -68,6 +69,11 @@ fun AccountCard(viewModel: AccountViewModel, guestLine: String = "Гостин")
                         enabled = !state.busy,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Поврзи со Google") }
+                    OutlinedButton(
+                        onClick = { showEmail = true },
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Поврзи со е-пошта") }
                 }
                 else -> {
                     val label = when (account.kind) {
@@ -76,6 +82,19 @@ fun AccountCard(viewModel: AccountViewModel, guestLine: String = "Гостин")
                         else -> "Сметка"
                     }
                     Text("$label: ${account.email ?: "—"}", style = MaterialTheme.typography.bodyLarge)
+                    if (account.kind == AccountKind.EMAIL && !account.emailVerified) {
+                        Text(
+                            "Е-поштата не е потврдена. Отвори го линкот што ти го испративме. Додека не ја потврдиш, сметката важи како гостинска.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        OutlinedButton(onClick = viewModel::checkVerification, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                            Text("Потврдив")
+                        }
+                        OutlinedButton(onClick = viewModel::resendVerification, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                            Text("Испрати повторно")
+                        }
+                    }
                     OutlinedButton(onClick = { confirmSignOut = true }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                         Text("Одјави се")
                     }
@@ -99,6 +118,7 @@ fun AccountCard(viewModel: AccountViewModel, guestLine: String = "Гостин")
         )
     }
 
+    if (showEmail) EmailAuthDialog(viewModel, isGuest = account.kind == AccountKind.GUEST, onDismiss = { showEmail = false })
     SwitchAccountDialogs(state.switch, viewModel)
     AccountMessageDialog(state.message, viewModel::dismissMessage)
 }

@@ -11,9 +11,11 @@ interface RetryScheduler {
 /** Which server-side account type an app-side account type should have. */
 object ExpectedKind {
     /** null = no expectation (an unknown type must never force a refresh). */
-    fun of(kind: AccountKind?): String? = when (kind) {
+    fun of(kind: AccountKind?, emailVerified: Boolean = true): String? = when (kind) {
         AccountKind.GUEST -> "GUEST"
-        AccountKind.GOOGLE, AccountKind.EMAIL -> "REGISTERED"
+        AccountKind.GOOGLE -> "REGISTERED"
+        // An email account is registered only once its address is confirmed; before that the server counts it as a guest.
+        AccountKind.EMAIL -> if (emailVerified) "REGISTERED" else null
         AccountKind.OTHER, null -> null
     }
 }
@@ -29,9 +31,9 @@ object ExpectedKind {
  */
 class SessionTriggers(private val refresher: SessionRefresher, private val retry: RetryScheduler) {
 
-    suspend fun onAccount(uid: String?, kind: AccountKind?) {
+    suspend fun onAccount(uid: String?, kind: AccountKind?, emailVerified: Boolean = true) {
         if (uid == null) return
-        when (refresher.refreshIfStale(uid, ExpectedKind.of(kind))) {
+        when (refresher.refreshIfStale(uid, ExpectedKind.of(kind, emailVerified))) {
             is RefreshOutcome.Retry -> retry.scheduleRetry()
             is RefreshOutcome.Updated -> retry.cancelRetry()
             RefreshOutcome.Fresh, is RefreshOutcome.GaveUp, RefreshOutcome.NoToken, RefreshOutcome.AccountChanged -> Unit

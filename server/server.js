@@ -32,7 +32,7 @@ const ADMIN_HTML = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'))
 //   FIREBASE_PROJECT_ID      e.g. the Firebase project id (needed to verify sign-in tokens)
 //   FIREBASE_PROJECT_NUMBER  needed for App Check only
 //   APPCHECK_MODE            off | monitor | enforce   (default: monitor if the project number is set, else off)
-//   ALLOWED_PROVIDERS        comma list, default "anonymous,google.com"
+//   ALLOWED_PROVIDERS        comma list, default "anonymous,google.com,password" (an unverified password account counts as a guest)
 const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID || '').trim();
 const FIREBASE_PROJECT_NUMBER = (process.env.FIREBASE_PROJECT_NUMBER || '').trim();
 let APPCHECK_MODE = (process.env.APPCHECK_MODE || (FIREBASE_PROJECT_NUMBER ? 'monitor' : 'off')).trim();
@@ -44,7 +44,7 @@ if (APPCHECK_MODE !== 'off' && !FIREBASE_PROJECT_NUMBER) {
   console.error('APPCHECK_MODE needs FIREBASE_PROJECT_NUMBER; App Check stays off.');
   APPCHECK_MODE = 'off';
 }
-const ALLOWED_PROVIDERS = (process.env.ALLOWED_PROVIDERS || 'anonymous,google.com').split(',').map((v) => v.trim()).filter(Boolean);
+const ALLOWED_PROVIDERS = (process.env.ALLOWED_PROVIDERS || 'anonymous,google.com,password').split(',').map((v) => v.trim()).filter(Boolean);
 
 const users = createUserStore(store.db);
 const limits = createLimits(store.db, users, { getMany: store.getRecipesByIds, all: store.allRecipesFull });

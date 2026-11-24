@@ -85,8 +85,8 @@ class AppContainer(context: Context) {
     private val localDataEraser = com.mojrucek.app.repository.LocalDataEraser(database)
 
     /** Deleting the signed-in account. [activityContext] is the Activity (the Google picker needs it); null only for finishing an interrupted deletion. */
-    fun accountDeletion(activityContext: Context?) = com.mojrucek.app.session.AccountDeletion(
-        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests),
+    fun accountDeletion(activityContext: Context?, password: String? = null) = com.mojrucek.app.session.AccountDeletion(
+        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests, password),
         pendingErasure
     )
     val guestReminders = GuestReminderCoordinator(WorkManagerGuestReminders(context.applicationContext))

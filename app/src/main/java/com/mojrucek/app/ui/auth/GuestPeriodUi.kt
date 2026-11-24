@@ -22,7 +22,9 @@ fun guestPeriodStatus(container: AppContainer): GuestPeriod.Status {
     val account by container.authRepository.state.collectAsState()
     val changes by container.sessionRepository.changes.collectAsState()
     val session = remember(account.uid, account.kind, changes) { account.uid?.let { container.sessionRepository.cached(it) } }
-    if (account.kind != AccountKind.GUEST || session?.kind != "GUEST") return GuestPeriod.Status.NotAGuest
+    // An email account whose address is not confirmed yet still counts as a guest on the server.
+    val guestLike = account.kind == AccountKind.GUEST || (account.kind == AccountKind.EMAIL && !account.emailVerified)
+    if (!guestLike || session?.kind != "GUEST") return GuestPeriod.Status.NotAGuest
     return session.guestStatus(System.currentTimeMillis())
 }
 

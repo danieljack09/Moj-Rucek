@@ -122,3 +122,24 @@ test('a user deleted and signing in again is a brand-new user with a fresh guest
   assert.notEqual(again.id, first.id);
   assert.equal(again.guest_started_at, clock.t);
 });
+
+test('an email/password account is a guest until its email is verified, then a registered Free user (same user)', () => {
+  const { store } = setup();
+  const guest = store.upsertSession({ uid: 'e1', provider: 'anonymous' });
+  // linking an email keeps the uid; while unverified the token counts as anonymous, so nothing changes
+  const stillGuest = store.upsertSession({ uid: 'e1', provider: 'anonymous' });
+  assert.equal(stillGuest.kind, 'GUEST');
+  assert.equal(stillGuest.guest_expires_at, guest.guest_expires_at);
+  // after verification the token says "password"
+  const registered = store.upsertSession({ uid: 'e1', provider: 'password' });
+  assert.equal(registered.id, guest.id);
+  assert.equal(registered.kind, 'REGISTERED');
+  assert.equal(registered.plan, 'FREE');
+  assert.equal(registered.guest_expires_at, null);
+});
+
+test('a brand-new verified email account is registered at once, and an unverified one starts as a guest', () => {
+  const { store } = setup();
+  assert.equal(store.upsertSession({ uid: 'v1', provider: 'password' }).kind, 'REGISTERED');
+  assert.equal(store.upsertSession({ uid: 'u1', provider: 'anonymous' }).kind, 'GUEST');
+});

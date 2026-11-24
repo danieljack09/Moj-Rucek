@@ -21,7 +21,7 @@ const tok = (claims, header) => idToken({ privateKey: pair.privateKey, claims: i
 
 test('accepts a valid anonymous token', async () => {
   const r = await verifier().verify(tok());
-  assert.deepEqual(r, { uid: 'uid-123', provider: 'anonymous', issuedAt: NOW_SEC - 10, expiresAt: NOW_SEC + 3600 });
+  assert.deepEqual(r, { uid: 'uid-123', provider: 'anonymous', signInProvider: 'anonymous', emailVerified: false, issuedAt: NOW_SEC - 10, expiresAt: NOW_SEC + 3600 });
 });
 
 test('accepts a valid google.com token', async () => {
@@ -87,18 +87,41 @@ test('rejects an unusable subject', async () => {
   assert.equal(await reason(tok({ sub: 'x'.repeat(128) })), 'ACCEPTED');
 });
 
-test('only anonymous and google.com are accepted by default (custom and password are not)', async () => {
-  for (const p of ['custom', 'password', 'phone', 'facebook.com', '']) {
+test('only anonymous, google.com and password are accepted by default (custom and others are not)', async () => {
+  for (const p of ['custom', 'phone', 'facebook.com', '']) {
     assert.equal(await reason(tok({ firebase: { sign_in_provider: p } })), 'provider_not_allowed', p);
   }
   assert.equal(await reason(tok({ firebase: {} })), 'provider_not_allowed');
   assert.equal(await reason(tok({ firebase: undefined })), 'provider_not_allowed');
 });
 
-test('the allowed providers can be widened explicitly (e.g. when Email/Password ships)', async () => {
-  const v = verifier({ allowedProviders: ['anonymous', 'google.com', 'password'] });
-  assert.equal(await reason(tok({ firebase: { sign_in_provider: 'password' } }), v), 'ACCEPTED');
-  assert.equal(await reason(tok({ firebase: { sign_in_provider: 'custom' } }), v), 'provider_not_allowed');
+test('the allowed providers can be narrowed explicitly', async () => {
+  const v = verifier({ allowedProviders: ['anonymous', 'google.com'] });
+  assert.equal(await reason(tok({ firebase: { sign_in_provider: 'password' } }), v), 'provider_not_allowed');
+  assert.equal(await reason(tok({ firebase: { sign_in_provider: 'google.com' } }), v), 'ACCEPTED');
+});
+
+test('a password account with a VERIFIED email counts as password (registered)', async () => {
+  const r = await verifier().verify(tok({ email_verified: true, firebase: { sign_in_provider: 'password' } }));
+  assert.equal(r.provider, 'password');
+  assert.equal(r.signInProvider, 'password');
+  assert.equal(r.emailVerified, true);
+});
+
+test('a password account with an UNVERIFIED email counts as a guest, whatever the claim looks like', async () => {
+  for (const claim of [false, undefined, null, 'true', 1, 'yes']) {
+    const r = await verifier().verify(tok({ email_verified: claim, firebase: { sign_in_provider: 'password' } }));
+    assert.equal(r.provider, 'anonymous', String(claim));
+    assert.equal(r.signInProvider, 'password');
+    assert.equal(r.emailVerified, false);
+  }
+});
+
+test('google.com and anonymous are not affected by the email rule', async () => {
+  const g = await verifier().verify(tok({ email_verified: false, firebase: { sign_in_provider: 'google.com' } }));
+  assert.equal(g.provider, 'google.com');
+  const a = await verifier().verify(tok({ email_verified: true, firebase: { sign_in_provider: 'anonymous' } }));
+  assert.equal(a.provider, 'anonymous');
 });
 
 test('malformed input never crashes the verifier', async () => {

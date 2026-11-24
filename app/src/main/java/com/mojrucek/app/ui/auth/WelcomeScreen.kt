@@ -17,6 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +36,7 @@ import com.mojrucek.app.R
 fun WelcomeScreen(viewModel: AccountViewModel) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var showEmail by remember { mutableStateOf(false) }
 
     Scaffold { padding ->
         Column(
@@ -58,6 +62,12 @@ fun WelcomeScreen(viewModel: AccountViewModel) {
             ) { Text("Продолжи со Google") }
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
+                onClick = { showEmail = true },
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) { Text("Продолжи со е-пошта") }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(
                 onClick = viewModel::continueAsGuest,
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().height(52.dp)
@@ -77,5 +87,6 @@ fun WelcomeScreen(viewModel: AccountViewModel) {
         }
     }
 
+    if (showEmail) EmailAuthDialog(viewModel, isGuest = false, onDismiss = { showEmail = false })
     AccountMessageDialog(state.message, viewModel::dismissMessage)
 }

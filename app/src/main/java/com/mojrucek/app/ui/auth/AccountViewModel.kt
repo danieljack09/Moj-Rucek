@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mojrucek.app.auth.AccountState
+import com.mojrucek.app.domain.auth.EmailInput
 import com.mojrucek.app.auth.AuthRepository
 import com.mojrucek.app.auth.AuthResult
 import com.mojrucek.app.repository.AccountSwitchRepository
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+enum class EmailMode { CREATE, SIGN_IN }
 
 /** Steps of the guest -> existing account switch (credential-already-in-use). */
 sealed interface SwitchStep {
@@ -72,6 +75,74 @@ class AccountViewModel(
             } finally {
                 busy.value = false
             }
+        }
+    }
+
+    /**
+     * The email form: [onDone] gets null on success (or when the explicit switch flow took over), else the text to show.
+     * Everything is checked first; nothing is sent when it is not valid.
+     */
+    fun submitEmail(mode: EmailMode, rawEmail: String, password: String, onDone: (String?) -> Unit) {
+        val email = EmailInput.normalize(rawEmail)
+        val problem = if (mode == EmailMode.CREATE) EmailInput.createProblem(email, password) else EmailInput.signInProblem(email, password)
+        if (problem != null) { onDone(problem); return }
+        if (busy.value) return
+        busy.value = true
+        viewModelScope.launch {
+            try {
+                when (val r = if (mode == EmailMode.CREATE) authRepository.createEmailAccount(email, password) else authRepository.signInWithEmail(email, password)) {
+                    AuthResult.Success -> {
+                        if (mode == EmailMode.CREATE) message.value = "Испратена е порака на $email. Отвори го линкот во неа за да ја потврдиш е-поштата."
+                        onDone(null)
+                    }
+                    AuthResult.Cancelled -> onDone(null)
+                    is AuthResult.Error -> onDone(r.message)
+                    is AuthResult.CredentialInUse -> {
+                        ownsConflict = true
+                        switch.value = SwitchStep.Explain(r.email)
+                        onDone(null)
+                    }
+                }
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
+    /** "Forgot password": sends the email. [onDone] gets null on success (the same answer whether or not the address has an account). */
+    fun requestPasswordReset(rawEmail: String, onDone: (String?) -> Unit) {
+        val email = EmailInput.normalize(rawEmail)
+        EmailInput.emailProblem(email)?.let { onDone(it); return }
+        if (busy.value) return
+        busy.value = true
+        viewModelScope.launch {
+            try {
+                onDone((authRepository.sendPasswordReset(email) as? AuthResult.Error)?.message)
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
+    /** Sends the verification email again. */
+    fun resendVerification() = launchAuthMessage {
+        when (val r = authRepository.sendVerificationEmail()) {
+            AuthResult.Success -> "Испратена е нова порака. Отвори го линкот во неа."
+            is AuthResult.Error -> r.message
+            else -> "Не успеа. Обиди се повторно."
+        }
+    }
+
+    /** "I confirmed it": asks Firebase, and the server hears about it through the usual refresh. */
+    fun checkVerification() = launchAuthMessage {
+        if (authRepository.refreshEmailVerification()) "Е-поштата е потврдена." else "Сè уште не е потврдена. Отвори го линкот во пораката."
+    }
+
+    private fun launchAuthMessage(block: suspend () -> String) {
+        if (busy.value) return
+        busy.value = true
+        viewModelScope.launch {
+            try { message.value = block() } finally { busy.value = false }
         }
     }
 

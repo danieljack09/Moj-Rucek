@@ -44,10 +44,10 @@ class MojRucekApplication : Application() {
         // A newer change cancels an attempt still in progress.
         applicationScope.launch {
             container.authRepository.state
-                .map { it.uid to it.kind }
+                .map { Triple(it.uid, it.kind, it.emailVerified) }
                 .distinctUntilChanged()
-                .collectLatest { (uid, kind) ->
-                    container.sessionTriggers.onAccount(uid, kind)
+                .collectLatest { (uid, kind, verified) ->
+                    container.sessionTriggers.onAccount(uid, kind, verified)
                     // Quietly learn where the account stands with the list rules and restore what is unlocked.
                     if (uid != null) {
                         container.unlockedDetailsRepository.pruneExpired()
@@ -58,6 +58,14 @@ class MojRucekApplication : Application() {
 
         // A deletion that was interrupted after the server record was removed: finish erasing the phone data.
         applicationScope.launch { container.accountDeletion(null).finishInterrupted() }
+
+        // An email account whose address was confirmed meanwhile (the link was opened on another device): notice it quietly.
+        applicationScope.launch {
+            val account = container.authRepository.state.value
+            if (account.kind == com.mojrucek.app.auth.AccountKind.EMAIL && !account.emailVerified) {
+                container.authRepository.refreshEmailVerification()
+            }
+        }
 
         // Keep the guest-period reminders in step with the account and the remembered answer.
         applicationScope.launch {

@@ -60,11 +60,11 @@ class DeleteAccountViewModel(private val container: AppContainer) : ViewModel() 
     fun close() { if (_stage.value != DeleteStage.Working) _stage.value = DeleteStage.Idle }
 
     /** Runs the deletion. NonCancellable: leaving the screen must not stop it halfway. */
-    fun confirm(activityContext: Context) {
+    fun confirm(activityContext: Context, password: String? = null) {
         if (_stage.value != DeleteStage.Confirm) return
         _stage.value = DeleteStage.Working          // set before launching: a double tap cannot start two runs
         viewModelScope.launch {
-            val outcome = withContext(NonCancellable) { container.accountDeletion(activityContext).run() }
+            val outcome = withContext(NonCancellable) { container.accountDeletion(activityContext, password).run() }
             _stage.value = when (outcome) {
                 DeletionOutcome.Done, DeletionOutcome.Cancelled -> DeleteStage.Idle
                 is DeletionOutcome.Failed -> DeleteStage.Problem(outcome.message)
@@ -77,7 +77,7 @@ class DeleteAccountViewModel(private val container: AppContainer) : ViewModel() 
 @Composable
 fun DeleteAccountSection(container: AppContainer) {
     val account by container.authRepository.state.collectAsState()
-    if (!account.available || !account.signedIn || (account.kind != AccountKind.GUEST && account.kind != AccountKind.GOOGLE)) return
+    if (!account.available || !account.signedIn || (account.kind != AccountKind.GUEST && account.kind != AccountKind.GOOGLE && account.kind != AccountKind.EMAIL)) return
 
     val vm: DeleteAccountViewModel = viewModel(
         factory = GenericViewModelFactory { DeleteAccountViewModel(container) }
@@ -86,6 +86,8 @@ fun DeleteAccountSection(container: AppContainer) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var understood by remember(stage) { mutableStateOf(false) }
+    var password by remember(stage) { mutableStateOf("") }
+    val needsPassword = account.kind == AccountKind.EMAIL
     var copyMessage by remember(stage) { mutableStateOf<String?>(null) }
     val saver = remember { backupSaverFor(context) { container.backupRepository.exportToJson(container.currentOwner.key) } }
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -119,6 +121,14 @@ fun DeleteAccountSection(container: AppContainer) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Зачувај копија прво") }
                     copyMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    if (needsPassword) {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = password, onValueChange = { password = it },
+                            label = { Text("Лозинка (за потврда)") }, singleLine = true,
+                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     Row(Modifier.fillMaxWidth().clickable { understood = !understood }, verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = understood, onCheckedChange = { understood = it })
                         Text("Разбирам дека не може да се врати")
@@ -126,8 +136,9 @@ fun DeleteAccountSection(container: AppContainer) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { vm.confirm(context) }, enabled = understood) {
-                    Text("Избриши", color = if (understood) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
+                val ready = understood && (!needsPassword || password.isNotEmpty())
+                TextButton(onClick = { vm.confirm(context, password.takeIf { needsPassword }) }, enabled = ready) {
+                    Text("Избриши", color = if (ready) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
                 }
             },
             dismissButton = { TextButton(onClick = vm::close) { Text("Откажи") } }

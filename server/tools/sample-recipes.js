@@ -2,8 +2,8 @@
 
 // Adds (or removes) four clearly marked test recipes on the server, through the admin API.
 //
-//   node server/tools/test-recipes.js add    <file-with-the-admin-password>
-//   node server/tools/test-recipes.js remove <file-with-the-admin-password>
+//   node server/tools/sample-recipes.js add    <file-with-the-admin-password>
+//   node server/tools/sample-recipes.js remove <file-with-the-admin-password>
 //
 // The password is read from a file you create yourself (and delete afterwards), so it never has to be typed into a
 // chat or a command line. Test recipes all start with "ТЕСТ – ", which is how `remove` finds them.
@@ -43,7 +43,7 @@ const RECIPES = [
 async function main() {
   const [mode, passwordFile] = process.argv.slice(2);
   if (!['add', 'remove'].includes(mode) || !passwordFile) {
-    console.error('Usage: node server/tools/test-recipes.js add|remove <password-file>');
+    console.error('Usage: node server/tools/sample-recipes.js add|remove <password-file>');
     process.exit(2);
   }
   const password = fs.readFileSync(passwordFile, 'utf8').trim();

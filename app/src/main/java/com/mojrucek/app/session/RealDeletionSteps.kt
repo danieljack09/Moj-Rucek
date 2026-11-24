@@ -21,14 +21,15 @@ class RealDeletionSteps(
     private val sessions: SessionStore,
     private val activityContext: Context?,
     private val limits: LimitStateStore? = null,
-    private val listRequests: PendingRequestStore? = null
+    private val listRequests: PendingRequestStore? = null,
+    private val password: String? = null
 ) : DeletionSteps {
 
     override val currentUid: String? get() = auth.currentUid
 
     override suspend fun reauthenticate(): Step {
         val context = activityContext ?: return Step.Failed("Недостасува екран за потврда.")
-        return when (val r = auth.reauthenticate(context)) {
+        return when (val r = auth.reauthenticate(context, password)) {
             AuthResult.Success -> Step.Done
             AuthResult.Cancelled -> Step.Cancelled
             is AuthResult.Error -> Step.Failed(r.message)
