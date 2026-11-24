@@ -49,6 +49,9 @@ class MojRucekApplication : Application() {
                 .collectLatest { (uid, kind) -> container.sessionTriggers.onAccount(uid, kind) }
         }
 
+        // A deletion that was interrupted after the server record was removed: finish erasing the phone data.
+        applicationScope.launch { container.accountDeletion(null).finishInterrupted() }
+
         // Keep the guest-period reminders in step with the account and the remembered answer.
         applicationScope.launch {
             combine(container.authRepository.state.map { it.uid }.distinctUntilChanged(), container.sessionRepository.changes) { uid, _ -> uid }

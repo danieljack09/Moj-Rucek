@@ -32,6 +32,7 @@ import androidx.navigation.navArgument
 import com.mojrucek.app.di.AppContainer
 import com.mojrucek.app.ui.auth.AccountCard
 import com.mojrucek.app.ui.auth.AccountViewModel
+import com.mojrucek.app.ui.auth.DeleteAccountSection
 import com.mojrucek.app.ui.auth.GuestExpiredDialog
 import com.mojrucek.app.ui.auth.guestSettingsLine
 import com.mojrucek.app.ui.components.GenericViewModelFactory
@@ -215,7 +216,10 @@ fun MojRucekNavHost(container: AppContainer) {
                 val accountVm: AccountViewModel = viewModel(factory = GenericViewModelFactory {
                     AccountViewModel(container.authRepository, container.accountSwitchRepository)
                 })
-                SettingsScreen(vm, onBack = { navController.popBackStack() }, accountCard = { AccountCard(accountVm, guestLine = guestSettingsLine(container)) })
+                SettingsScreen(vm, onBack = { navController.popBackStack() }, accountCard = {
+                    AccountCard(accountVm, guestLine = guestSettingsLine(container))
+                    DeleteAccountSection(container)
+                })
             }
 
             composable(Dest.RecipeNew.route) {

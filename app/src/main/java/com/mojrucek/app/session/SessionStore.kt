@@ -40,6 +40,9 @@ interface SessionStore {
     /** The calendar day the "guest period ended" dialog was last shown to this account, if ever. */
     fun expiredDialogShownOn(uid: String): LocalDate?
     fun setExpiredDialogShownOn(uid: String, day: LocalDate)
+
+    /** Forgets everything remembered for [uid] (account deletion). */
+    fun forget(uid: String)
 }
 
 class InMemorySessionStore : SessionStore {
@@ -49,6 +52,7 @@ class InMemorySessionStore : SessionStore {
     override fun save(uid: String, session: StoredSession) { sessions[uid] = session }
     override fun expiredDialogShownOn(uid: String) = shown[uid]
     override fun setExpiredDialogShownOn(uid: String, day: LocalDate) { shown[uid] = day }
+    override fun forget(uid: String) { sessions.remove(uid); shown.remove(uid) }
 }
 
 /** Kept in the app's private preferences (not in the database): one entry per account id. */
@@ -76,5 +80,9 @@ class SharedPreferencesSessionStore(context: Context) : SessionStore {
 
     override fun setExpiredDialogShownOn(uid: String, day: LocalDate) {
         prefs.edit().putString("d_$uid", day.toString()).apply()
+    }
+
+    override fun forget(uid: String) {
+        prefs.edit().remove("s_$uid").remove("d_$uid").apply()
     }
 }

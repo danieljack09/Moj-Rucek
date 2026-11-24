@@ -166,6 +166,42 @@ class AuthRepository(private val appContext: Context) : IdTokenSource {
     fun clearPendingConflict() { pendingConflict = null }
 
     /**
+     * Proves it is really the owner before an account is deleted (Firebase requires a recent sign-in for that).
+     * A guest has nothing to prove; a Google account picks its Google account again; other types are not supported yet.
+     */
+    suspend fun reauthenticate(activityContext: Context): AuthResult {
+        val user = auth?.currentUser ?: return AuthResult.Error("Не си најавен.")
+        if (user.isAnonymous) return AuthResult.Success
+        if (kindOf(user) != AccountKind.GOOGLE) return AuthResult.Error("Овој тип сметка уште не може да се избрише од апликацијата.")
+        val credential = when (val r = requestGoogleCredential(activityContext)) {
+            is GoogleCredentialResult.Ok -> r.credential
+            is GoogleCredentialResult.Failed -> return r.result
+        }
+        return try {
+            user.reauthenticate(credential).await()
+            AuthResult.Success
+        } catch (e: Exception) {
+            AuthResult.Error(AuthErrors.message(e))
+        }
+    }
+
+    /** Deletes the signed-in Firebase account itself. Safe to repeat: with nobody signed in it simply succeeds. */
+    suspend fun deleteCurrentAccount(): AuthResult {
+        val user = auth?.currentUser ?: return AuthResult.Success
+        return try {
+            user.delete().await()
+            pendingConflict = null
+            try {
+                CredentialManager.create(appContext).clearCredentialState(ClearCredentialStateRequest())
+            } catch (_: Exception) { }
+            refresh()
+            AuthResult.Success
+        } catch (e: Exception) {
+            AuthResult.Error(AuthErrors.message(e))
+        }
+    }
+
+    /**
      * Signs out. Local data on the phone is not touched. Guests are never offered this.
      *
      * TEMPORARY (Stage A, not production-ready): local data has no owner yet, so it stays visible
