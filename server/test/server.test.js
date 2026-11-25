@@ -243,3 +243,20 @@ test('the sync endpoints need a sign-in (503 when accounts are off, 401 without 
     assert.equal((await call(srv, 'PUT', '/api/sync/data')).status, 404);
   } finally { await srv.stop(); }
 });
+
+test('the public pages tell the truth about sync: a copy of the data is kept on the server and is deleted with the account', async () => {
+  const srv = await startServer();
+  try {
+    const privacy = await (await fetch(srv.base + '/privacy')).text();
+    const del = await (await fetch(srv.base + '/delete-account')).text();
+    for (const [name, html] of [['privacy', privacy], ['delete-account', del]]) {
+      assert.ok(html.includes('копија'), `${name}: mentions the copy on the server`);
+      assert.ok(!html.includes('остануваат на твојот телефон, а лозинките'), `${name}: the old "stays only on the phone" sentence is gone`);
+      assert.ok(!html.includes('Не ги чуваме твоите намирници'), `${name}: no claim that pantry and recipes are not stored`);
+      assert.ok(!html.includes('We do not store your pantry'), `${name}: no English claim either`);
+    }
+    assert.ok(privacy.includes('копијата на твоите податоци') && privacy.includes('копијата на податоците на серверот'), 'retention and deletion cover the copy');
+    assert.ok(privacy.includes('Поставки на телефонот'), 'settings are said to stay on the phone');
+    assert.ok(del.includes('pantry, own recipes, plans, shopping list, favourites'), 'the English part lists what the copy contains');
+  } finally { await srv.stop(); }
+});

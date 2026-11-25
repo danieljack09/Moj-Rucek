@@ -148,6 +148,41 @@ class SyncSnapshotInstrumentedTest {
         assertTrue("two steps swapped", changed())
     }
 
+    @Test fun aMealPlannedOnAServerRecipe_keepsItsRecipeOnTheOtherPhone_evenWithoutAFavourite() = runBlocking {
+        val a = phone()
+        val planned = a.addServerRecipe(77, "Планиран, не омилен")
+        val unused = a.addServerRecipe(88, "Не се користи")
+        val plan = a.planner.getOrCreatePlan(LocalDate.of(2026, 11, 23), defaultServings = 2)
+        a.planner.setMeal(plan.weeklyPlan.id, dayOfWeek = 3, recipeId = planned)
+        val snap = a.backup.exportForSync()
+        val names = list(snap, "recipes").map { it.jsonObject["name"]!!.jsonPrimitive.content }
+        assertEquals("only the recipe a meal uses travels as a stub", listOf("Планиран, не омилен"), names)
+
+        val b = phone()
+        b.addServerRecipe(77, "Планиран, не омилен")
+        assertTrue(b.backup.importForSync(snap) is ImportResult.Success)
+
+        val meal = b.db.plannerDao().getAllWithMealsOnce("uid-A").single().meals.single()
+        assertEquals(3, meal.dayOfWeek)
+        assertEquals("the meal still points at the recipe", b.recipes.findByServerId(77)!!.id, meal.recipeId)
+        assertTrue(unused > 0)
+    }
+
+    @Test fun aMealOnAServerRecipe_thatTheNewPhoneDoesNotHaveYet_getsItsRecipeWhenTheCatalogArrives() = runBlocking {
+        val a = phone()
+        val planned = a.addServerRecipe(77, "Планиран")
+        val plan = a.planner.getOrCreatePlan(LocalDate.of(2026, 11, 23), defaultServings = 2)
+        a.planner.setMeal(plan.weeklyPlan.id, dayOfWeek = 1, recipeId = planned)
+        val b = phone()            // the catalog has not been downloaded here yet
+        assertTrue(b.backup.importForSync(a.backup.exportForSync()) is ImportResult.Success)
+        val meal = b.db.plannerDao().getAllWithMealsOnce("uid-A").single().meals.single()
+        val stub = b.recipes.findByServerId(77)!!
+        assertEquals("the stub keeps the link", stub.id, meal.recipeId)
+        // the catalog sync later fills the stub in, in place (same row, so the link survives)
+        b.recipes.upsert(stub.copy(name = "Планиран (од каталог)", cookTimeMinutes = 30), emptyList())
+        assertEquals(stub.id, b.db.plannerDao().getAllWithMealsOnce("uid-A").single().meals.single().recipeId)
+    }
+
     // ---------- a second phone ----------
 
     @Test fun aNewPhone_importsEverything_withNewIdsButTheSameMeaning() = runBlocking {

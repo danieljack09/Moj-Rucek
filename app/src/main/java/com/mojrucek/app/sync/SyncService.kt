@@ -40,7 +40,7 @@ data class SyncUiState(
 
 /**
  * Runs sync when something asks for it (app start, leaving the app, the 12-hour job, the button) and keeps what the screens
- * show. Automatic runs are spaced at least [minGapMs] apart, so a burst of events costs one run; the button always runs.
+ * show. Automatic runs are spaced at least [minGapMs] (15 s) apart, so a burst of events costs one run; the button always runs.
  * A run that could not reach the server plans one background retry; a finished run (or a conflict, which waits for the
  * user) cancels it. Nothing here ever shows a raw error.
  */
@@ -53,7 +53,7 @@ class SyncService(
     /** False while something must settle first (for example the data from before accounts is not handed over yet). */
     private val canSync: () -> Boolean = { true },
     private val nowMs: () -> Long = System::currentTimeMillis,
-    private val minGapMs: Long = 60_000
+    private val minGapMs: Long = 15_000
 ) {
     private val _state = MutableStateFlow(SyncUiState(lastSyncedAt = currentUid()?.let(syncer::lastSyncedAt)))
     val state: StateFlow<SyncUiState> = _state.asStateFlow()

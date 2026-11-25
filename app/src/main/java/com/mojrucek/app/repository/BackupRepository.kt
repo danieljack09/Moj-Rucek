@@ -52,21 +52,24 @@ class BackupRepository(
 
     /**
      * The snapshot used by sync (see docs/sync-plan.md): the account's own pantry, own recipes, plans and shopping list, plus
-     * the server recipes it marked as favourites, reduced to a stub (a server recipe is the same for everyone and changes by
+     * the server recipes it marked as favourites or plans meals with, reduced to a stub (a server recipe is the same for everyone and changes by
      * itself, so its details and dates must not make the account look "changed"). The phone's reminder settings are NOT
      * included: they belong to the device.
      */
     suspend fun exportForSync(ownerKey: String = owner.key): String {
         val all = recipeRepository.getAllWithIngredientsOnce(ownerKey)
         val own = all.filter { it.recipe.serverId == null }
-        val favouriteServerStubs = all
-            .filter { it.recipe.serverId != null && it.recipe.isFavorite }
-            .map { it.recipe.copy(createdAt = 0, updatedAt = 0) }
         val allPlans = plannerDao.getAllWithMealsOnce(ownerKey)
+        // A server recipe travels as a stub when the account refers to it: as a favourite, or because a planned meal uses it
+        // (otherwise the meal would lose its recipe on the other phone).
+        val plannedRecipeIds = allPlans.flatMap { it.meals }.mapNotNull { it.recipeId }.toSet()
+        val referencedServerStubs = all
+            .filter { it.recipe.serverId != null && (it.recipe.isFavorite || it.recipe.id in plannedRecipeIds) }
+            .map { it.recipe.copy(createdAt = 0, updatedAt = 0) }
         val data = BackupData(
             exportedAtEpochMillis = System.currentTimeMillis(),
             ingredients = ingredientRepository.getAllOnce(ownerKey),
-            recipes = own.map { it.recipe } + favouriteServerStubs,
+            recipes = own.map { it.recipe } + referencedServerStubs,
             recipeIngredients = own.flatMap { it.ingredients },
             shoppingListItems = shoppingListRepository.getAllOnce(ownerKey),
             weeklyPlans = allPlans.map { it.weeklyPlan },
