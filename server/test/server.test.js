@@ -224,3 +224,22 @@ test('the public privacy policy (Macedonian) is served as plain, safe HTML, with
     assert.equal((await fetch(srv.base + '/privacy', { method: 'POST' })).status, 404);
   } finally { await srv.stop(); }
 });
+
+test('the sync endpoints need a sign-in (503 when accounts are off, 401 without a valid token), wrong methods are 404', async () => {
+  const off = await startServer();
+  try {
+    for (const [m, p] of [['GET', '/api/sync'], ['GET', '/api/sync/data'], ['PUT', '/api/sync']]) {
+      assert.equal((await call(off, m, p, { authorization: 'Bearer a.b.c' })).status, 503, `${m} ${p}`);
+    }
+  } finally { await off.stop(); }
+  const srv = await startServer({ FIREBASE_PROJECT_ID: 'test-project' });
+  try {
+    for (const [m, p] of [['GET', '/api/sync'], ['GET', '/api/sync/data'], ['PUT', '/api/sync']]) {
+      assert.equal((await call(srv, m, p)).status, 401, `${m} ${p} without token`);
+      assert.equal((await call(srv, m, p, { authorization: 'Bearer not-a-jwt' })).status, 401, `${m} ${p} bad token`);
+    }
+    assert.equal((await call(srv, 'POST', '/api/sync')).status, 404);
+    assert.equal((await call(srv, 'DELETE', '/api/sync')).status, 404);
+    assert.equal((await call(srv, 'PUT', '/api/sync/data')).status, 404);
+  } finally { await srv.stop(); }
+});

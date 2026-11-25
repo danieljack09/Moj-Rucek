@@ -11,6 +11,7 @@ const { createFirebaseIdTokenVerifier } = require('./lib/firebase-auth');
 const { createAppCheckVerifier } = require('./lib/app-check');
 const { createUserStore } = require('./users');
 const { createLimits } = require('./limits');
+const { createSync, createSyncApi } = require('./sync');
 const { createIdentity, clientAddress } = require('./identity');
 const { INGREDIENT_CATEGORIES, RECIPE_CATEGORIES, UNITS } = require('./constants');
 
@@ -58,6 +59,8 @@ if (APPCHECK_MODE !== 'off' && !FIREBASE_PROJECT_NUMBER) {
 const ALLOWED_PROVIDERS = (process.env.ALLOWED_PROVIDERS || 'anonymous,google.com,password').split(',').map((v) => v.trim()).filter(Boolean);
 
 const users = createUserStore(store.db);
+const sync = createSync(store.db, users);
+const syncApi = createSyncApi(sync, users);
 const limits = createLimits(store.db, users, { getMany: store.getRecipesByIds, all: store.allRecipesFull });
 
 // CATALOG_LOCKED=1: the public catalog stops sending description, steps, notes and tags (they come only with an
@@ -138,13 +141,13 @@ function send(res, status, body, headers = {}) {
   res.end(payload);
 }
 
-function readJson(req) {
+function readJson(req, maxBytes = 1_000_000) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > 1_000_000) {
+      if (size > maxBytes) {
         reject(new HttpError(413, 'Преголемо барање.'));
         req.destroy();
       } else chunks.push(c);
@@ -252,6 +255,13 @@ async function handle(req, res) {
   if (p === '/api/unlocks' && m === 'GET') {
     const who = await identity.authenticate(req, clientAddress(req));
     return send(res, 200, limits.state(users.upsertSession(who)));
+  }
+
+  // Sync: one snapshot per account (see docs/sync-plan.md). The phone sends the revision it was based on.
+  if (syncApi.handles(m, p)) {
+    const who = await identity.authenticate(req, clientAddress(req));
+    const r = await syncApi.handle(m, p, who, () => readJson(req, 5 * 1024 * 1024));
+    return send(res, r.status, r.body);
   }
 
   // Account deletion: removes the caller's own record only. Already deleted (or never opened) is also 204.
