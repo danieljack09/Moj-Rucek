@@ -50,6 +50,32 @@ class BackupRepository(
         return json.encodeToString(BackupData.serializer(), data)
     }
 
+    /**
+     * The snapshot used by sync (see docs/sync-plan.md): the account's own pantry, own recipes, plans and shopping list, plus
+     * the server recipes it marked as favourites, reduced to a stub (a server recipe is the same for everyone and changes by
+     * itself, so its details and dates must not make the account look "changed"). The phone's reminder settings are NOT
+     * included: they belong to the device.
+     */
+    suspend fun exportForSync(ownerKey: String = owner.key): String {
+        val all = recipeRepository.getAllWithIngredientsOnce(ownerKey)
+        val own = all.filter { it.recipe.serverId == null }
+        val favouriteServerStubs = all
+            .filter { it.recipe.serverId != null && it.recipe.isFavorite }
+            .map { it.recipe.copy(createdAt = 0, updatedAt = 0) }
+        val allPlans = plannerDao.getAllWithMealsOnce(ownerKey)
+        val data = BackupData(
+            exportedAtEpochMillis = System.currentTimeMillis(),
+            ingredients = ingredientRepository.getAllOnce(ownerKey),
+            recipes = own.map { it.recipe } + favouriteServerStubs,
+            recipeIngredients = own.flatMap { it.ingredients },
+            shoppingListItems = shoppingListRepository.getAllOnce(ownerKey),
+            weeklyPlans = allPlans.map { it.weeklyPlan },
+            plannedMeals = allPlans.flatMap { it.meals },
+            settings = com.mojrucek.app.data.entity.AppSettings()
+        )
+        return json.encodeToString(BackupData.serializer(), data)
+    }
+
     /** Counts of what [ownerKey] has right now, in the same shape as a backup's summary. */
     suspend fun currentSummary(ownerKey: String = owner.key): BackupSummary = BackupSummary(
         ingredientCount = ingredientRepository.getAllOnce(ownerKey).size,
@@ -69,13 +95,18 @@ class BackupRepository(
      * All or nothing: everything happens in ONE database transaction, so if anything fails the
      * current data is exactly as it was before. Other accounts' data is never touched.
      */
-    suspend fun import(jsonText: String): ImportResult {
+    suspend fun import(jsonText: String): ImportResult = importInternal(jsonText, applySettings = true)
+
+    /** Like [import] for a sync snapshot: the phone's own reminder settings are left exactly as they are. */
+    suspend fun importForSync(jsonText: String): ImportResult = importInternal(jsonText, applySettings = false)
+
+    private suspend fun importInternal(jsonText: String, applySettings: Boolean): ImportResult {
         val data = when (val parsed = BackupFormat.parse(jsonText)) {
             is BackupFormat.Parsed.Ok -> parsed.data
             is BackupFormat.Parsed.Invalid -> return ImportResult.InvalidFile(parsed.reason)
         }
         return try {
-            database.withTransaction { restore(data) }
+            database.withTransaction { restore(data, applySettings) }
             ImportResult.Success(data.summary())
         } catch (e: CancellationException) {
             throw e
@@ -84,7 +115,7 @@ class BackupRepository(
         }
     }
 
-    private suspend fun restore(data: BackupData) {
+    private suspend fun restore(data: BackupData, applySettings: Boolean) {
         val ownerKey = owner.key
         ingredientRepository.restoreAll(data.ingredients)
 
@@ -126,6 +157,6 @@ class BackupRepository(
         val meals = BackupFormat.remapMeals(data.plannedMeals, newPlanIdByOldId, newRecipeIdByOldId)
         if (meals.isNotEmpty()) plannerDao.insertMeals(meals)
 
-        settingsRepository.update { data.settings }
+        if (applySettings) settingsRepository.update { data.settings }
     }
 }
