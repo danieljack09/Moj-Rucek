@@ -1,0 +1,11 @@
+[Unit]
+Description=Moj Rucek database backup, every night
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=600
+# A night the server was off: the backup runs at the next start.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

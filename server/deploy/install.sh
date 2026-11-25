@@ -37,7 +37,7 @@ fi
 # --- user and files ---
 id rucek >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin rucek
 mkdir -p "$APP/data"
-cp -r "$SRC/server.js" "$SRC/db.js" "$SRC/identity.js" "$SRC/users.js" "$SRC/limits.js" "$SRC/sync.js" "$SRC/constants.js" "$SRC/seed-ingredients.json" "$SRC/package.json" "$SRC/lib" "$SRC/public" "$APP/"
+cp -r "$SRC/server.js" "$SRC/db.js" "$SRC/identity.js" "$SRC/users.js" "$SRC/limits.js" "$SRC/sync.js" "$SRC/backup.js" "$SRC/constants.js" "$SRC/seed-ingredients.json" "$SRC/package.json" "$SRC/lib" "$SRC/public" "$APP/"
 chown -R rucek:rucek "$APP"
 
 # --- service ---
@@ -49,6 +49,23 @@ sleep 2
 echo -n "Health check: "
 curl -fsS http://127.0.0.1:3100/health || { echo; echo "Server did not start. See: journalctl -u rucek-server -n 30"; exit 1; }
 echo
+
+# --- nightly database backup (see docs/server-backup.md) ---
+mkdir -p /var/backups/rucek
+chown rucek:rucek /var/backups/rucek
+chmod 750 /var/backups/rucek
+# The administrator who runs this script may read the backups (to copy them off the server).
+if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then usermod -aG rucek "${SUDO_USER}"; fi
+cp "$SRC/deploy/rucek-backup.service" /etc/systemd/system/rucek-backup.service
+cp "$SRC/deploy/rucek-backup.timer" /etc/systemd/system/rucek-backup.timer
+systemctl daemon-reload
+systemctl enable --now rucek-backup.timer >/dev/null
+echo -n "First backup: "
+if systemctl start rucek-backup.service; then
+  journalctl -u rucek-backup.service -n 1 --no-pager -o cat
+else
+  echo "FAILED. See: journalctl -u rucek-backup -n 30"
+fi
 
 # --- nginx (new file only; display.mk config is not touched) ---
 if [ ! -e /etc/nginx/sites-available/$DOMAIN ]; then

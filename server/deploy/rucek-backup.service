@@ -1,0 +1,21 @@
+[Unit]
+Description=Moj Rucek database backup (one safe copy, compressed, old ones removed)
+
+[Service]
+Type=oneshot
+User=rucek
+Group=rucek
+WorkingDirectory=/opt/rucek-server
+Environment=DB_PATH=/opt/rucek-server/data/catalog.db
+Environment=BACKUP_DIR=/var/backups/rucek
+Environment=BACKUP_KEEP=30
+Environment=BACKUP_SHARED=1
+ExecStart=/usr/bin/node /opt/rucek-server/backup.js
+
+# Hardening: only the data folder (for the database's own lock files) and the backup folder are writable.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/rucek-server/data /var/backups/rucek
+UMask=0027
