@@ -25,7 +25,10 @@ interface SnapshotPort {
 
 /** Keeps a copy of the phone's data before it is replaced. false = it could not be kept, so nothing may be replaced. */
 interface SafetyCopy {
-    fun save(snapshotJson: String): Boolean
+    fun save(uid: String, snapshotJson: String): Boolean
+
+    /** Deletes every copy kept for [uid] (when that account is deleted). */
+    fun deleteAll(uid: String)
 }
 
 /** What the phone remembers about its last successful sync with the server, per account. */
@@ -103,16 +106,16 @@ class SyncCoordinator(
     private val safety: SafetyCopy,
     private val store: SyncStateStore,
     private val nowMs: () -> Long = System::currentTimeMillis
-) {
+) : Syncer {
     private val lock = Mutex()
 
     /** What the screen may show: when this account last synced successfully (phone clock), or null. */
-    fun lastSyncedAt(uid: String): Long? = store.load(uid)?.syncedAtMs
+    override fun lastSyncedAt(uid: String): Long? = store.load(uid)?.syncedAtMs
 
-    suspend fun sync(): SyncOutcome = lock.withLock { guarded { runSync() } }
+    override suspend fun sync(): SyncOutcome = lock.withLock { guarded { runSync() } }
 
     /** The user chose to keep this phone's data: upload it over whatever the server has. */
-    suspend fun resolveKeepThisPhone(): SyncOutcome = lock.withLock {
+    override suspend fun resolveKeepThisPhone(): SyncOutcome = lock.withLock {
         guarded {
             val ctx = start() ?: return@guarded SyncOutcome.NotSignedIn
             val meta = when (val m = server.meta(ctx.token)) {
@@ -124,7 +127,7 @@ class SyncCoordinator(
     }
 
     /** The user chose the cloud copy: keep a safety copy of this phone's data, then replace it. */
-    suspend fun resolveUseCloud(): SyncOutcome = lock.withLock {
+    override suspend fun resolveUseCloud(): SyncOutcome = lock.withLock {
         guarded {
             val ctx = start() ?: return@guarded SyncOutcome.NotSignedIn
             download(ctx)
@@ -191,7 +194,7 @@ class SyncCoordinator(
         }
         if (tokens.currentUid != ctx.uid) return accountChanged()
         // Nothing is replaced unless the phone's current data was kept first.
-        if (!SnapshotInfo.isEmpty(ctx.localExport) && !safety.save(ctx.localExport)) {
+        if (!SnapshotInfo.isEmpty(ctx.localExport) && !safety.save(ctx.uid, ctx.localExport)) {
             return SyncOutcome.Problem("Не успеав да направам копија од податоците на телефонот, па ништо не е заменето.")
         }
         if (!port.import(downloaded.data)) {

@@ -34,6 +34,8 @@ import com.mojrucek.app.ui.auth.AccountCard
 import com.mojrucek.app.ui.auth.AccountViewModel
 import com.mojrucek.app.ui.auth.DeleteAccountSection
 import com.mojrucek.app.ui.auth.GuestExpiredDialog
+import com.mojrucek.app.ui.sync.SyncCard
+import com.mojrucek.app.ui.sync.SyncConflictDialog
 import com.mojrucek.app.ui.auth.guestSettingsLine
 import com.mojrucek.app.ui.components.GenericViewModelFactory
 import com.mojrucek.app.ui.home.HomeScreen
@@ -63,6 +65,7 @@ fun MojRucekNavHost(container: AppContainer) {
     val showBottomBar = bottomNavItems.any { it.dest.route == currentRoute }
 
     GuestExpiredDialog(container, onOpenSettings = { navController.navigate(Dest.Settings.route) })
+    SyncConflictDialog(container)
 
     Scaffold(
         bottomBar = {
@@ -222,6 +225,7 @@ fun MojRucekNavHost(container: AppContainer) {
                 })
                 SettingsScreen(vm, onBack = { navController.popBackStack() }, accountCard = {
                     AccountCard(accountVm, guestLine = guestSettingsLine(container))
+                    SyncCard(container)
                     DeleteAccountSection(container)
                 })
             }

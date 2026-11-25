@@ -26,6 +26,9 @@ class MojRucekApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
         NotificationHelper.createChannel(this)
+        // Sync also when the user leaves the app, and every 12 hours with internet.
+        registerActivityLifecycleCallbacks(com.mojrucek.app.sync.BackgroundTrigger { container.syncService.requestSync(manual = false) })
+        container.syncScheduler.schedulePeriodic()
         ExpiryReminderScheduler.scheduleDailyCheck(this)
 
         applicationScope.launch {
@@ -47,11 +50,14 @@ class MojRucekApplication : Application() {
                 .map { Triple(it.uid, it.kind, it.emailVerified) }
                 .distinctUntilChanged()
                 .collectLatest { (uid, kind, verified) ->
+                    container.syncService.onAccountChanged()
                     container.sessionTriggers.onAccount(uid, kind, verified)
                     // Quietly learn where the account stands with the list rules and restore what is unlocked.
                     if (uid != null) {
                         container.unlockedDetailsRepository.pruneExpired()
                         container.listPermission.refreshState()
+                        // Then bring the account's data in step with the server (quiet; a conflict is only reported).
+                        container.syncService.syncNow(manual = false)
                     }
                 }
         }
@@ -78,6 +84,8 @@ class MojRucekApplication : Application() {
         applicationScope.launch {
             container.currentOwner.flow.collect { owner ->
                 container.ownershipCoordinator.onOwnerChanged(owner)
+                // Sync waits until the data from before accounts has been settled; now it may run.
+                container.syncService.syncNow(manual = false)
                 if (OwnerKeys.isAccount(owner)) container.shoppingListRepository.migrateLegacyPurchasedItems()
             }
         }

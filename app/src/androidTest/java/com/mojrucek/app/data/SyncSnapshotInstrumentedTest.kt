@@ -229,7 +229,7 @@ class SyncSnapshotInstrumentedTest {
         val dir = File(target.cacheDir, "sync-safety-${System.nanoTime()}").apply { mkdirs() }.also { tempDirs += it }
         val context = object : android.content.ContextWrapper(target) { override fun getFilesDir(): File = dir }
         val safety = FileSafetyCopy(context)
-        repeat(8) { i -> assertTrue(safety.save("""{"formatVersion":1,"copy":$i}""")); Thread.sleep(5) }
+        repeat(8) { i -> assertTrue(safety.save("uid-A", """{"formatVersion":1,"copy":$i}""")); Thread.sleep(5) }
 
         val files = File(dir, FileSafetyCopy.DIR).listFiles { f -> f.name.endsWith(".json") }!!.sortedBy { it.name }
         assertEquals(5, files.size)

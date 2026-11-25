@@ -20,10 +20,14 @@ class BackupSnapshotPort(private val backup: BackupRepository) : SnapshotPort {
  */
 class FileSafetyCopy(private val context: Context, private val keep: Int = KEEP) : SafetyCopy {
 
-    override fun save(snapshotJson: String): Boolean = try {
+    /** The file name carries a short hash of the account id, so one account's copies can be found (and deleted) without the id itself. */
+    private fun tag(uid: String): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(uid.toByteArray(Charsets.UTF_8)).take(6).joinToString("") { "%02x".format(it) }
+
+    override fun save(uid: String, snapshotJson: String): Boolean = try {
         val dir = File(context.filesDir, DIR).apply { mkdirs() }
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
-        val file = File(dir, "mojrucek-pred-sinhronizacija-$stamp.json")
+        val file = File(dir, "mojrucek-pred-sinhronizacija-${tag(uid)}-$stamp.json")
         val tmp = File(dir, "${file.name}.tmp")
         FileOutputStream(tmp).use { out ->
             out.write(snapshotJson.toByteArray(Charsets.UTF_8))
@@ -31,14 +35,19 @@ class FileSafetyCopy(private val context: Context, private val keep: Int = KEEP)
         }
         val ok = !file.exists() && tmp.renameTo(file) && file.readText(Charsets.UTF_8) == snapshotJson
         if (!ok) tmp.delete()
-        if (ok) prune(dir)
+        if (ok) prune(dir, tag(uid))
         ok
     } catch (e: Exception) {
         false
     }
 
-    private fun prune(dir: File) {
-        val copies = dir.listFiles { f -> f.name.endsWith(".json") }?.sortedBy { it.name } ?: return
+    override fun deleteAll(uid: String) {
+        val dir = File(context.filesDir, DIR)
+        dir.listFiles { f -> f.name.contains("-${tag(uid)}-") }?.forEach { it.delete() }
+    }
+
+    private fun prune(dir: File, tag: String) {
+        val copies = dir.listFiles { f -> f.name.endsWith(".json") && f.name.contains("-$tag-") }?.sortedBy { it.name } ?: return
         copies.dropLast(keep).forEach { it.delete() }
     }
 

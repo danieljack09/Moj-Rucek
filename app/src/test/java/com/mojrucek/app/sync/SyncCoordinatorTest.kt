@@ -56,7 +56,8 @@ class SyncCoordinatorTest {
     private class Safety : SafetyCopy {
         val saved = mutableListOf<String>()
         var fails = false
-        override fun save(snapshotJson: String): Boolean { if (fails) return false; saved += snapshotJson; return true }
+        override fun save(uid: String, snapshotJson: String): Boolean { if (fails) return false; saved += snapshotJson; return true }
+        override fun deleteAll(uid: String) { saved.clear() }
     }
 
     private class Tokens(override var currentUid: String? = "uid-A") : IdTokenSource {

@@ -13,6 +13,26 @@ class SharedPreferencesPendingErasure(context: Context) : PendingErasureStore {
     override fun clear() { prefs.edit().remove("pending_uid").commit() }
 }
 
+/**
+ * Everything the app remembers about ONE account outside the database (server answer, list rules, pending requests, sync
+ * state and the safety copies kept before sync replaced data). Deleting an account must leave none of it behind.
+ */
+class AccountMemory(
+    private val sessions: SessionStore,
+    private val limits: LimitStateStore?,
+    private val listRequests: PendingRequestStore?,
+    private val syncState: com.mojrucek.app.sync.SyncStateStore?,
+    private val syncSafetyCopies: com.mojrucek.app.sync.SafetyCopy?
+) {
+    fun forget(uid: String) {
+        sessions.forget(uid)
+        limits?.forget(uid)
+        listRequests?.clear(uid)
+        syncState?.forget(uid)
+        syncSafetyCopies?.deleteAll(uid)
+    }
+}
+
 /** The real steps: Firebase, our server, the database. [activityContext] is needed for the Google picker (null when only finishing an interrupted deletion). */
 class RealDeletionSteps(
     private val auth: AuthRepository,
@@ -22,7 +42,9 @@ class RealDeletionSteps(
     private val activityContext: Context?,
     private val limits: LimitStateStore? = null,
     private val listRequests: PendingRequestStore? = null,
-    private val password: String? = null
+    private val password: String? = null,
+    private val syncState: com.mojrucek.app.sync.SyncStateStore? = null,
+    private val syncSafetyCopies: com.mojrucek.app.sync.SafetyCopy? = null
 ) : DeletionSteps {
 
     override val currentUid: String? get() = auth.currentUid
@@ -57,8 +79,6 @@ class RealDeletionSteps(
 
     override suspend fun eraseLocal(uid: String) {
         eraser.eraseAccount(uid)
-        sessions.forget(uid)
-        limits?.forget(uid)
-        listRequests?.clear(uid)
+        AccountMemory(sessions, limits, listRequests, syncState, syncSafetyCopies).forget(uid)
     }
 }

@@ -81,12 +81,26 @@ class AppContainer(context: Context) {
         com.mojrucek.app.session.HttpGenerationServer(), authRepository, unlockedDetailsRepository, limitStateStore, pendingListRequests
     )
 
+    // Sync (docs/sync-plan.md): one snapshot per account on the server, decided by the coordinator, run by the service.
+    private val syncStateStore = com.mojrucek.app.sync.SharedPreferencesSyncStateStore(context)
+    private val syncSafetyCopy = com.mojrucek.app.sync.FileSafetyCopy(context)
+    private val syncOwnershipPrefs = SharedPreferencesOwnershipPrefs(context)
+    val syncScheduler = com.mojrucek.app.sync.WorkManagerSyncScheduler(context.applicationContext)
+    private val syncCoordinator = com.mojrucek.app.sync.SyncCoordinator(
+        com.mojrucek.app.sync.HttpSyncServer(), authRepository, com.mojrucek.app.sync.BackupSnapshotPort(backupRepository), syncSafetyCopy, syncStateStore
+    )
+    val syncService = com.mojrucek.app.sync.SyncService(
+        syncCoordinator, syncScheduler, { authRepository.currentUid },
+        scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
+        canSync = { syncOwnershipPrefs.legacyState == com.mojrucek.app.repository.LegacyState.DONE }
+    )
+
     private val pendingErasure = com.mojrucek.app.session.SharedPreferencesPendingErasure(context)
     private val localDataEraser = com.mojrucek.app.repository.LocalDataEraser(database)
 
     /** Deleting the signed-in account. [activityContext] is the Activity (the Google picker needs it); null only for finishing an interrupted deletion. */
     fun accountDeletion(activityContext: Context?, password: String? = null) = com.mojrucek.app.session.AccountDeletion(
-        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests, password),
+        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests, password, syncStateStore, syncSafetyCopy),
         pendingErasure
     )
     val guestReminders = GuestReminderCoordinator(WorkManagerGuestReminders(context.applicationContext))
