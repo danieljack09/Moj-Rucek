@@ -260,3 +260,278 @@ test('the public pages tell the truth about sync: a copy of the data is kept on 
     assert.ok(del.includes('pantry, own recipes, plans, shopping list, favourites'), 'the English part lists what the copy contains');
   } finally { await srv.stop(); }
 });
+
+// ---------- recipe pictures ----------
+
+// Tiny but real files (just their first bytes matter to the server).
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16]), Buffer.from('JFIF\0pretend-photo-data-of-a-jpeg'), Buffer.from([0xff, 0xd9])]);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('pretend-png-data-0000')]);
+const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x20, 0, 0, 0]), Buffer.from('WEBPVP8 pretend-webp-data')]);
+
+async function newRecipe(srv, cookie, name = 'Тест рецепт') {
+  const res = await fetch(srv.base + '/admin/api/recipes', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ ...RECIPE, name }) });
+  assert.equal(res.status, 201);
+  return res.json();
+}
+const putImage = (srv, cookie, id, body) => fetch(`${srv.base}/admin/api/recipes/${id}/image`, { method: 'PUT', headers: { cookie, 'content-type': 'application/octet-stream' }, body });
+
+test('an admin can add a picture to a recipe; it appears in the catalog and is served publicly with a year of caching', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    assert.equal(r.imageUrl, null, 'no picture yet');
+
+    const put = await putImage(srv, cookie, r.id, JPEG);
+    assert.equal(put.status, 200);
+    const { imageUrl } = await put.json();
+    assert.match(imageUrl, new RegExp(`^/img/${r.id}-[0-9a-f]{16}\\.jpg$`));
+
+    const catalog = (await call(srv, 'GET', '/api/catalog?since=0')).body.recipes.find((x) => x.id === r.id);
+    assert.equal(catalog.imageUrl, imageUrl);
+
+    const pic = await fetch(srv.base + imageUrl);                      // public: no login
+    assert.equal(pic.status, 200);
+    assert.equal(pic.headers.get('content-type'), 'image/jpeg');
+    assert.match(pic.headers.get('cache-control'), /immutable/);
+    assert.match(pic.headers.get('cache-control'), /max-age=31536000/);
+    assert.equal(pic.headers.get('x-content-type-options'), 'nosniff');
+    assert.match(pic.headers.get('content-security-policy'), /default-src 'none'/);
+    assert.ok(pic.headers.get('etag'));
+    assert.ok(Buffer.from(await pic.arrayBuffer()).equals(JPEG), 'the exact bytes come back');
+    assert.equal((await fetch(srv.base + imageUrl, { method: 'HEAD' })).status, 200);
+  } finally { await srv.stop(); }
+});
+
+test('replacing a picture gives a new address (so phones fetch it again), and the old address stops working', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const first = (await (await putImage(srv, cookie, r.id, JPEG)).json()).imageUrl;
+    const before = (await call(srv, 'GET', '/api/catalog?since=0')).body.recipes[0].updatedAt;
+    await new Promise((x) => setTimeout(x, 5));
+    const second = (await (await putImage(srv, cookie, r.id, PNG)).json()).imageUrl;
+    assert.notEqual(first, second);
+    assert.match(second, /\.png$/);
+    assert.equal((await fetch(srv.base + first)).status, 404, 'the old picture is gone');
+    assert.equal((await fetch(srv.base + second)).status, 200);
+    assert.ok((await call(srv, 'GET', '/api/catalog?since=0')).body.recipes[0].updatedAt > before, 'the recipe counts as changed, so apps sync it');
+    // the same bytes again: same address, nothing odd
+    assert.equal((await (await putImage(srv, cookie, r.id, PNG)).json()).imageUrl, second);
+  } finally { await srv.stop(); }
+});
+
+test('removing a picture empties imageUrl, marks the recipe as changed, and the picture is no longer served', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const url = (await (await putImage(srv, cookie, r.id, WEBP)).json()).imageUrl;
+    const t0 = (await call(srv, 'GET', '/api/catalog?since=0')).body.serverTime;
+    await new Promise((x) => setTimeout(x, 5));
+    const del = await fetch(`${srv.base}/admin/api/recipes/${r.id}/image`, { method: 'DELETE', headers: { cookie } });
+    assert.equal(del.status, 200);
+    assert.equal((await del.json()).imageUrl, null);
+    assert.equal((await fetch(srv.base + url)).status, 404);
+    const changed = (await call(srv, 'GET', `/api/catalog?since=${t0}`)).body.recipes;
+    assert.equal(changed.length, 1, 'only the changed recipe comes in the next sync');
+    assert.equal(changed[0].imageUrl, null);
+    assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}/image`, { method: 'DELETE', headers: { cookie } })).status, 200, 'removing twice is harmless');
+  } finally { await srv.stop(); }
+});
+
+test('only real JPEG, PNG and WebP files up to 2 MB are accepted', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const status = async (body) => (await putImage(srv, cookie, r.id, body)).status;
+    assert.equal(await status(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')), 400);   // SVG can carry script
+    assert.equal(await status(Buffer.from('GIF89a......pretend-gif')), 400);
+    assert.equal(await status(Buffer.from('just some text, not a picture')), 400);
+    assert.equal(await status(Buffer.from([0xff, 0xd8])), 400);                                     // too short to be a picture
+    assert.equal(await status(Buffer.alloc(0)), 400);
+    assert.equal(await status(Buffer.concat([JPEG, Buffer.alloc(2 * 1024 * 1024)])), 413);          // over 2 MB
+    assert.equal((await call(srv, 'GET', '/api/catalog?since=0')).body.recipes[0].imageUrl, null, 'nothing was stored');
+    const big = Buffer.concat([JPEG, Buffer.alloc(2 * 1024 * 1024 - JPEG.length)]);                 // exactly at the limit
+    assert.equal(big.length, 2 * 1024 * 1024);
+    assert.equal(await status(big), 200);
+  } finally { await srv.stop(); }
+});
+
+test('the picture address cannot be guessed or reused: wrong hash, wrong recipe, wrong type and odd paths are all 404', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const other = await newRecipe(srv, cookie, 'Друг рецепт');
+    const url = (await (await putImage(srv, cookie, r.id, JPEG)).json()).imageUrl;
+    const [, id, sha] = /^\/img\/(\d+)-([0-9a-f]{16})\.jpg$/.exec(url);
+    const bad = [`/img/${id}-${'0'.repeat(16)}.jpg`, `/img/${other.id}-${sha}.jpg`, `/img/${id}-${sha}.png`, `/img/${id}-${sha}.svg`, `/img/${id}-${sha}.jpg/x`,
+      `/img/${id}.jpg`, `/img/%2e%2e%2fadmin`, `/img/${id}-${sha.toUpperCase()}.jpg`, `/img/999999-${sha}.jpg`, '/img/'];
+    for (const p of bad) assert.equal((await fetch(srv.base + p)).status, 404, p);
+    assert.equal((await fetch(srv.base + url, { method: 'POST' })).status, 404);
+  } finally { await srv.stop(); }
+});
+
+test('only a logged-in admin can set or remove a picture; a missing recipe is 404; deleting the recipe deletes its picture', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}/image`, { method: 'PUT', body: JPEG })).status, 401);
+    assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}/image`, { method: 'DELETE' })).status, 401);
+    assert.equal((await putImage(srv, cookie, 99999, JPEG)).status, 404);
+    const url = (await (await putImage(srv, cookie, r.id, JPEG)).json()).imageUrl;
+    assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}`, { method: 'DELETE', headers: { cookie } })).status, 200);
+    assert.equal((await fetch(srv.base + url)).status, 404);
+    assert.equal((await putImage(srv, cookie, r.id, JPEG)).status, 404, 'a deleted recipe takes no new picture');
+    const gone = (await call(srv, 'GET', '/api/catalog?since=0')).body.recipes.find((x) => x.id === r.id);
+    assert.equal(gone.deleted, true);
+    assert.equal(gone.imageUrl, null);
+  } finally { await srv.stop(); }
+});
+
+test('with CATALOG_LOCKED=1 the picture is still public (it is part of what a Free user may see)', async () => {
+  const srv = await startServer({ CATALOG_LOCKED: '1' });
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const url = (await (await putImage(srv, cookie, r.id, JPEG)).json()).imageUrl;
+    const c = (await call(srv, 'GET', '/api/catalog?since=0')).body.recipes[0];
+    assert.equal(c.locked, true);
+    assert.equal(c.imageUrl, url);
+    assert.deepEqual(c.instructionSteps, []);
+  } finally { await srv.stop(); }
+});
+
+test('the admin page may show recipe pictures and a preview of the chosen file, but still no outside content', async () => {
+  const srv = await startServer();
+  try {
+    const res = await fetch(srv.base + '/admin');
+    const csp = res.headers.get('content-security-policy');
+    assert.match(csp, /img-src 'self' blob:/);
+    assert.match(csp, /default-src 'self'/);
+    assert.ok(!/http/.test(csp), 'no outside address is allowed');
+  } finally { await srv.stop(); }
+});
+
+// ---------- where the picture is framed (the point that stays in view when the app crops it to a circle) ----------
+
+const putFocus = (srv, cookie, id, body) => fetch(`${srv.base}/admin/api/recipes/${id}/image/focus`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const catalogRecipe = async (srv, id) => (await call(srv, 'GET', '/api/catalog?since=0')).body.recipes.find((x) => x.id === id);
+
+test('a new picture is framed in the middle unless the admin chose another point; without a picture there is no framing', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    assert.equal(r.imageFocusX, null);
+    assert.equal(r.imageFocusY, null);
+
+    const first = await (await putImage(srv, cookie, r.id, JPEG)).json();
+    assert.equal(first.imageFocusX, 0.5);
+    assert.equal(first.imageFocusY, 0.5);
+    let c = await catalogRecipe(srv, r.id);
+    assert.equal(c.imageFocusX, 0.5);
+    assert.equal(c.imageFocusY, 0.5);
+
+    const chosen = await fetch(`${srv.base}/admin/api/recipes/${r.id}/image?fx=0.25&fy=0.8`, { method: 'PUT', headers: { cookie }, body: PNG });
+    assert.equal(chosen.status, 200);
+    c = await catalogRecipe(srv, r.id);
+    assert.equal(c.imageFocusX, 0.25);
+    assert.equal(c.imageFocusY, 0.8);
+
+    // a replacement picture without a point starts in the middle again (a different photo needs a different framing)
+    await putImage(srv, cookie, r.id, JPEG);
+    c = await catalogRecipe(srv, r.id);
+    assert.equal(c.imageFocusX, 0.5);
+
+    await fetch(`${srv.base}/admin/api/recipes/${r.id}/image`, { method: 'DELETE', headers: { cookie } });
+    c = await catalogRecipe(srv, r.id);
+    assert.equal(c.imageFocusX, null);
+    assert.equal(c.imageFocusY, null);
+  } finally { await srv.stop(); }
+});
+
+test('the framing can be moved without sending the picture again: the address stays and the recipe counts as changed', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const { imageUrl } = await (await putImage(srv, cookie, r.id, JPEG)).json();
+    const t0 = (await call(srv, 'GET', '/api/catalog?since=0')).body.serverTime;
+    await new Promise((x) => setTimeout(x, 5));
+
+    const res = await putFocus(srv, cookie, r.id, { x: 0.123456, y: 1 });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.imageUrl, imageUrl, 'the picture itself (and so its cached copy on phones) is unchanged');
+    assert.equal(body.imageFocusX, 0.123, 'rounded to three decimals');
+    assert.equal(body.imageFocusY, 1);
+
+    const changed = (await call(srv, 'GET', `/api/catalog?since=${t0}`)).body.recipes;
+    assert.equal(changed.length, 1, 'phones pick up the new framing at their next sync');
+    assert.equal(changed[0].imageFocusX, 0.123);
+    assert.equal((await fetch(srv.base + imageUrl)).status, 200);
+
+    assert.equal((await (await putFocus(srv, cookie, r.id, { x: 0, y: 0 })).json()).imageFocusX, 0, 'the edges are allowed');
+    const middle = await (await putFocus(srv, cookie, r.id, {})).json();
+    assert.equal(middle.imageFocusX, 0.5, 'nothing given means the middle');
+  } finally { await srv.stop(); }
+});
+
+test('a framing point outside the picture, or not a number, is refused and changes nothing', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    await fetch(`${srv.base}/admin/api/recipes/${r.id}/image?fx=0.3&fy=0.4`, { method: 'PUT', headers: { cookie }, body: JPEG });
+    for (const bad of [{ x: -0.1, y: 0.5 }, { x: 0.5, y: 1.0001 }, { x: 2, y: 0.5 }, { x: 'abc', y: 0.5 }, { x: [0.2], y: 0.5 }, { x: true, y: 0.5 }, { x: {}, y: 0.5 }, { x: 0.5, y: 'NaN' }, { x: 0.5, y: 1e9 }]) {
+      assert.equal((await putFocus(srv, cookie, r.id, bad)).status, 400, JSON.stringify(bad));
+    }
+    for (const q of ['fx=-1', 'fx=1.5', 'fy=abc', 'fx=0.5&fy=7']) {
+      assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}/image?${q}`, { method: 'PUT', headers: { cookie }, body: PNG })).status, 400, q);
+    }
+    const c = await catalogRecipe(srv, r.id);
+    assert.equal(c.imageFocusX, 0.3);
+    assert.equal(c.imageFocusY, 0.4);
+    assert.match(c.imageUrl, /\.jpg$/, 'the picture was not replaced by a refused request either');
+  } finally { await srv.stop(); }
+});
+
+test('moving the framing needs the admin login, a recipe, and a picture', async () => {
+  const srv = await startServer();
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const noLogin = await fetch(`${srv.base}/admin/api/recipes/${r.id}/image/focus`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{"x":0.1,"y":0.1}' });
+    assert.equal(noLogin.status, 401);
+    assert.equal((await putFocus(srv, cookie, r.id, { x: 0.1, y: 0.1 })).status, 404, 'a recipe without a picture has nothing to frame');
+    assert.equal((await putFocus(srv, cookie, 99999, { x: 0.1, y: 0.1 })).status, 404);
+    await putImage(srv, cookie, r.id, JPEG);
+    assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}/image/focus`, { method: 'POST', headers: { cookie } })).status, 404, 'only PUT');
+    assert.equal((await fetch(`${srv.base}/admin/api/recipes/${r.id}/image/other`, { method: 'PUT', headers: { cookie }, body: JPEG })).status, 404);
+  } finally { await srv.stop(); }
+});
+
+test('a server that already holds pictures from before the framing existed is upgraded when it starts', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rucek-upgrade-'));
+  const dbFile = path.join(dir, 'old.db');
+  const { DatabaseSync } = require('node:sqlite');
+  const old = new DatabaseSync(dbFile);
+  // exactly the table as the previous version created it: no framing columns
+  old.exec(`CREATE TABLE recipe_images (recipe_id INTEGER PRIMARY KEY, mime TEXT NOT NULL, sha TEXT NOT NULL, size INTEGER NOT NULL, bytes BLOB NOT NULL, updated_at INTEGER NOT NULL);`);
+  old.close();
+  const srv = await startServer({ DB_PATH: dbFile });
+  try {
+    const cookie = await adminCookie(srv);
+    const r = await newRecipe(srv, cookie);
+    const put = await fetch(`${srv.base}/admin/api/recipes/${r.id}/image?fx=0.2&fy=0.9`, { method: 'PUT', headers: { cookie }, body: JPEG });
+    assert.equal(put.status, 200);
+    const c = await catalogRecipe(srv, r.id);
+    assert.equal(c.imageFocusX, 0.2);
+    assert.equal(c.imageFocusY, 0.9);
+  } finally { await srv.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

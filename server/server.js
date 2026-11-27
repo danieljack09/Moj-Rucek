@@ -26,6 +26,7 @@ const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('he
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const COOKIE = 'rucek_admin';
 
+const EXT_MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
 const ADMIN_HTML = fs.readFileSync(path.join(__dirname, 'public', 'admin.html'));
 // Public page required by Google Play: how to delete an account and its data (in the app, or by email).
 const DELETE_ACCOUNT_HTML = fs.readFileSync(path.join(__dirname, 'public', 'delete-account.html'));
@@ -141,6 +142,28 @@ function send(res, status, body, headers = {}) {
   res.end(payload);
 }
 
+/**
+ * The raw request body (for picture uploads). A body over [maxBytes] is not kept and ends in a 413 answer (the rest is read and
+ * thrown away, so the sender gets the answer instead of a broken connection); an absurdly large one is cut off.
+ */
+function readBuffer(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let tooBig = false;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > maxBytes) {
+        tooBig = true;
+        chunks.length = 0;
+        if (size > maxBytes * 8) req.destroy();
+      } else if (!tooBig) chunks.push(c);
+    });
+    req.on('end', () => (tooBig ? reject(new HttpError(413, 'Сликата е преголема (најмногу 2 MB).')) : resolve(Buffer.concat(chunks))));
+    req.on('error', reject);
+  });
+}
+
 function readJson(req, maxBytes = 1_000_000) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -222,6 +245,22 @@ async function handle(req, res) {
 
   if (p === '/health') return send(res, 200, { ok: true });
 
+  // Recipe pictures: public, and cached for a year because the address changes whenever the picture does.
+  const imageMatch = /^\/img\/(\d+)-([0-9a-f]{16})\.(jpg|png|webp)$/.exec(p);
+  if (imageMatch && (m === 'GET' || m === 'HEAD')) {
+    const image = store.getRecipeImage(Number(imageMatch[1]), imageMatch[2]);
+    if (!image || EXT_MIME[imageMatch[3]] !== image.mime) throw new HttpError(404, 'Не е пронајдено.');
+    res.writeHead(200, {
+      'Content-Type': image.mime,
+      'Content-Length': image.bytes.length,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      ETag: `"${image.sha}"`,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+    });
+    return res.end(m === 'HEAD' ? undefined : image.bytes);
+  }
+
   if (p === '/delete-account' && (m === 'GET' || m === 'HEAD')) return send(res, 200, DELETE_ACCOUNT_HTML, PUBLIC_PAGE_HEADERS);
   if (p === '/privacy' && (m === 'GET' || m === 'HEAD')) return send(res, 200, PRIVACY_HTML, PUBLIC_PAGE_HEADERS);
 
@@ -274,7 +313,8 @@ async function handle(req, res) {
 
   if (p === '/admin' && m === 'GET') {
     return send(res, 200, ADMIN_HTML, {
-      'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+      // img-src: the recipe pictures (same address) and the preview of a picture chosen on this computer (blob:).
+      'Content-Security-Policy': "default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
     });
@@ -322,6 +362,24 @@ async function handle(req, res) {
       if (id !== null && m === 'PUT') return send(res, 200, store.saveIngredient(id, validateIngredient(await readJson(req))));
       if (id !== null && m === 'DELETE') { store.deleteIngredient(id); return send(res, 200, { ok: true }); }
     }
+
+    // A recipe's picture: PUT = set or replace (the raw image file as the body), DELETE = remove.
+    if (resource === 'recipes' && id !== null && parts[2] === 'image' && parts[3] === 'focus' && m === 'PUT') {
+      // Moves the framing point only: PUT /admin/api/recipes/:id/image/focus {x, y}, each 0 to 1.
+      const body = await readJson(req);
+      return send(res, 200, store.setRecipeImageFocus(id, { x: body.x, y: body.y }));
+    }
+    if (resource === 'recipes' && id !== null && parts[2] === 'image' && parts.length === 3) {
+      // The framing point may come along with a new picture: ?fx=0.4&fy=0.6 (default: the middle).
+      if (m === 'PUT') {
+        const query = new URL(req.url, 'http://localhost').searchParams;
+        return send(res, 200, store.setRecipeImage(id, await readBuffer(req, store.MAX_IMAGE_BYTES), { x: query.get('fx'), y: query.get('fy') }));
+      }
+      if (m === 'DELETE') return send(res, 200, store.removeRecipeImage(id));
+    }
+
+    // Any other longer path under a recipe (for example /recipes/5/something) is not a recipe request.
+    if (resource === 'recipes' && parts.length > 2) throw new HttpError(404, 'Не е пронајдено.');
 
     if (resource === 'recipes') {
       if (id === null && m === 'GET') return send(res, 200, store.listRecipes());

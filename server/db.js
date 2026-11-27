@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 const { HttpError } = require('./lib/http-error');
 const { lockedView } = require('./limits');
+const { detectImage } = require('./lib/image-type');
+const crypto = require('node:crypto');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'catalog.db');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -48,10 +50,28 @@ CREATE TABLE IF NOT EXISTS recipe_ingredients (
   sort_order INTEGER NOT NULL DEFAULT 0
 );
 
+-- One picture per recipe, stored in the database itself so the nightly backup and a restore always carry it.
+CREATE TABLE IF NOT EXISTS recipe_images (
+  recipe_id  INTEGER PRIMARY KEY REFERENCES recipes(id) ON DELETE CASCADE,
+  mime       TEXT NOT NULL,
+  sha        TEXT NOT NULL,        -- first 16 hex characters of the SHA-256 of the bytes; part of the picture's address
+  size       INTEGER NOT NULL,
+  bytes      BLOB NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_ingredients_updated ON ingredients(updated_at);
 CREATE INDEX IF NOT EXISTS idx_recipes_updated ON recipes(updated_at);
 CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_recipe ON recipe_ingredients(recipe_id);
 `);
+
+// Upgrade of a database that already has recipe_images without the framing columns (the point of the picture that stays in view when
+// the app crops it to a circle: 0 = left/top edge, 0.5 = middle, 1 = right/bottom edge).
+{
+  const columns = db.prepare('PRAGMA table_info(recipe_images)').all().map((c) => c.name);
+  if (!columns.includes('focus_x')) db.exec('ALTER TABLE recipe_images ADD COLUMN focus_x REAL NOT NULL DEFAULT 0.5');
+  if (!columns.includes('focus_y')) db.exec('ALTER TABLE recipe_images ADD COLUMN focus_y REAL NOT NULL DEFAULT 0.5');
+}
 
 // Strictly increasing timestamps, so "updated since X" never misses a change
 // made in the same millisecond as a previous one.
@@ -190,6 +210,87 @@ const parseJsonList = (s) => {
   }
 };
 
+const EXT_BY_MIME = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+
+/** The address of a recipe's picture ("/img/12-0123456789abcdef.jpg"), or null. The address changes whenever the picture does. */
+function imageUrlOf(recipeId) {
+  const row = db.prepare('SELECT sha, mime FROM recipe_images WHERE recipe_id = ?').get(recipeId);
+  return row ? `/img/${recipeId}-${row.sha}.${EXT_BY_MIME[row.mime]}` : null;
+}
+
+/** A position inside the picture, 0 to 1 (rounded to 3 decimals); anything else is refused. Missing means the middle. */
+function parseFocusValue(v) {
+  if (v === undefined || v === null || v === '') return 0.5;
+  if (typeof v !== 'number' && typeof v !== 'string') throw new HttpError(400, 'Невалидна положба на сликата.');   // no arrays, objects, booleans
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 1) throw new HttpError(400, 'Невалидна положба на сликата.');
+  return Math.round(n * 1000) / 1000;
+}
+
+/** The framing point of a recipe's picture, or null when it has no picture. */
+function imageFocusOf(recipeId) {
+  const row = db.prepare('SELECT focus_x AS x, focus_y AS y FROM recipe_images WHERE recipe_id = ?').get(recipeId);
+  return row ? { x: row.x, y: row.y } : null;
+}
+
+/** Stores (or replaces) the picture of a recipe. Only real JPEG, PNG or WebP files up to 2 MB are accepted. [focus] = { x, y } (default: the middle). */
+function setRecipeImage(recipeId, buffer, focus = {}) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new HttpError(400, 'Нема слика.');
+  if (buffer.length > MAX_IMAGE_BYTES) throw new HttpError(413, 'Сликата е преголема (најмногу 2 MB).');
+  const kind = detectImage(buffer);
+  if (!kind) throw new HttpError(400, 'Сликата мора да биде JPEG, PNG или WebP.');
+  const sha = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 16);
+  const fx = parseFocusValue(focus.x);
+  const fy = parseFocusValue(focus.y);
+  return transaction(() => {
+    const exists = db.prepare('SELECT id FROM recipes WHERE id = ? AND deleted = 0').get(recipeId);
+    if (!exists) throw new HttpError(404, 'Не е пронајдено.');
+    const ts = now();
+    db.prepare(
+      `INSERT INTO recipe_images (recipe_id, mime, sha, size, bytes, updated_at, focus_x, focus_y) VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT(recipe_id) DO UPDATE SET mime=excluded.mime, sha=excluded.sha, size=excluded.size, bytes=excluded.bytes,
+         updated_at=excluded.updated_at, focus_x=excluded.focus_x, focus_y=excluded.focus_y`
+    ).run(recipeId, kind.mime, sha, buffer.length, buffer, ts, fx, fy);
+    db.prepare('UPDATE recipes SET updated_at = ? WHERE id = ?').run(ts, recipeId);   // the app picks the change up at its next sync
+    return { imageUrl: imageUrlOf(recipeId), imageFocusX: fx, imageFocusY: fy };
+  });
+}
+
+/** Moves the framing point of an existing picture without sending it again (the address stays, the recipe counts as changed). */
+function setRecipeImageFocus(recipeId, focus) {
+  const fx = parseFocusValue(focus.x);
+  const fy = parseFocusValue(focus.y);
+  return transaction(() => {
+    const exists = db.prepare('SELECT id FROM recipes WHERE id = ? AND deleted = 0').get(recipeId);
+    if (!exists) throw new HttpError(404, 'Не е пронајдено.');
+    const res = db.prepare('UPDATE recipe_images SET focus_x = ?, focus_y = ?, updated_at = ? WHERE recipe_id = ?').run(fx, fy, now(), recipeId);
+    if (res.changes === 0) throw new HttpError(404, 'Рецептот нема слика.');
+    db.prepare('UPDATE recipes SET updated_at = ? WHERE id = ?').run(now(), recipeId);
+    return { imageUrl: imageUrlOf(recipeId), imageFocusX: fx, imageFocusY: fy };
+  });
+}
+
+/** Removes the picture of a recipe (nothing happens when it has none). */
+function removeRecipeImage(recipeId) {
+  return transaction(() => {
+    const exists = db.prepare('SELECT id FROM recipes WHERE id = ? AND deleted = 0').get(recipeId);
+    if (!exists) throw new HttpError(404, 'Не е пронајдено.');
+    const res = db.prepare('DELETE FROM recipe_images WHERE recipe_id = ?').run(recipeId);
+    if (res.changes > 0) db.prepare('UPDATE recipes SET updated_at = ? WHERE id = ?').run(now(), recipeId);
+    return { imageUrl: null, imageFocusX: null, imageFocusY: null };
+  });
+}
+
+/** The picture served at an address, only while that address is still the current one for that recipe. */
+function getRecipeImage(recipeId, sha) {
+  const row = db.prepare(
+    `SELECT i.mime, i.sha, i.bytes FROM recipe_images i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = ? AND r.deleted = 0`
+  ).get(recipeId);
+  if (!row || row.sha !== sha) return null;
+  return { mime: row.mime, sha: row.sha, bytes: Buffer.from(row.bytes) };
+}
+
 function recipeOut(r) {
   const lines = db
     .prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ? ORDER BY sort_order, id')
@@ -207,6 +308,9 @@ function recipeOut(r) {
     instructionSteps: parseJsonList(r.steps),
     notes: r.notes,
     ingredients: lines,
+    imageUrl: r.deleted ? null : imageUrlOf(r.id),
+    imageFocusX: r.deleted ? null : (imageFocusOf(r.id)?.x ?? null),
+    imageFocusY: r.deleted ? null : (imageFocusOf(r.id)?.y ?? null),
     deleted: !!r.deleted,
     updatedAt: r.updated_at,
   };
@@ -279,6 +383,7 @@ function saveRecipe(id, d) {
 function deleteRecipe(id) {
   const res = db.prepare('UPDATE recipes SET deleted=1, updated_at=? WHERE id=? AND deleted=0').run(now(), id);
   if (res.changes === 0) throw new HttpError(404, 'Не е пронајдено.');
+  db.prepare('DELETE FROM recipe_images WHERE recipe_id = ?').run(id);   // a deleted recipe keeps no picture
 }
 
 // ---------- public catalog for the app ----------
@@ -308,4 +413,5 @@ module.exports = {
   listRecipes, getRecipe, saveRecipe, deleteRecipe,
   catalogSince,
   getRecipesByIds, allRecipesFull,
+  setRecipeImage, setRecipeImageFocus, removeRecipeImage, getRecipeImage, MAX_IMAGE_BYTES,
 };

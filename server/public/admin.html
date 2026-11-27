@@ -42,6 +42,13 @@
   .msg.ok { background:#e8f3ec; color:var(--accent); }
   .muted { color:var(--muted); }
   #login { max-width:340px; margin:12vh auto; }
+  .thumb { width:44px; height:44px; object-fit:cover; border-radius:8px; display:block; background:#eef2ec; }
+  img.photo-preview { cursor:grab; touch-action:none; user-select:none; -webkit-user-drag:none; border-style:solid; outline:none; }
+  img.photo-preview:active { cursor:grabbing; }
+  .photo-box { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin:6px 0 4px; }
+  .photo-preview { width:240px; height:240px; flex:none; border-radius:50%; border:1px dashed var(--line); background:#f1f4ef; object-fit:cover; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px; text-align:center; }
+  .photo-actions { display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
+  .photo-actions input[type=file] { display:none; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -105,6 +112,50 @@ async function api(method, path, body) {
   if (res.status === 401 && path !== 'login') { showLogin(); throw new Error(data.error || 'Не си најавен.'); }
   if (!res.ok) throw new Error(data.error || 'Грешка.');
   return data;
+}
+
+// Sends a picture file (not JSON) for a recipe: PUT sets or replaces it.
+async function sendImageFocus(recipeId, x, y) {
+  const res = await fetch('/admin/api/recipes/' + recipeId + '/image/focus', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ x, y }) });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { showLogin(); throw new Error(data.error || 'Не си најавен.'); }
+  if (!res.ok) throw new Error(data.error || 'Положбата не се зачува.');
+  return data;
+}
+
+async function sendImage(recipeId, blob, focus) {
+  const q = focus ? '?fx=' + focus.x + '&fy=' + focus.y : '';
+  const res = await fetch('/admin/api/recipes/' + recipeId + '/image' + q, { method: 'PUT', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { showLogin(); throw new Error(data.error || 'Не си најавен.'); }
+  if (!res.ok) throw new Error(data.error || 'Сликата не се прати.');
+  return data;
+}
+
+const MAX_PHOTO_SIDE = 1200;          // longest side in pixels after shrinking
+const MAX_PHOTO_BYTES = 1_500_000;    // the server accepts up to 2 MB; this leaves room
+
+// Shrinks a chosen picture in the browser (longest side 1200 px, JPEG) before it is sent: small files load fast on phones,
+// and re-encoding also removes hidden camera data such as the location.
+async function shrinkPhoto(file) {
+  const bitmap = await createImageBitmap(file);
+  try {
+    let scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(bitmap.width, bitmap.height));
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';                    // a see-through picture (PNG) gets a white background, not black
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const quality = attempt < 2 ? 0.85 : 0.7;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+      if (blob && blob.size <= MAX_PHOTO_BYTES) return blob;
+      scale *= 0.8;                                 // still too big: try a smaller picture
+    }
+    throw new Error('Сликата е преголема. Избери помала.');
+  } finally { bitmap.close(); }
 }
 
 function flash(text, ok = true) {
@@ -237,8 +288,9 @@ async function renderRecipes() {
       h('div', { class: 'toolbar' }, h('button', { class: 'primary', onclick: () => renderRecipeForm(null) }, '+ Нов рецепт'),
         h('span', { class: 'muted' }, `${recipes.length} рецепти`)),
       h('table', {},
-        h('tr', {}, h('th', {}, 'Име'), h('th', {}, 'Категорија'), h('th', {}, 'Порции'), h('th', {}, 'Состојки'), h('th')),
+        h('tr', {}, h('th'), h('th', {}, 'Име'), h('th', {}, 'Категорија'), h('th', {}, 'Порции'), h('th', {}, 'Состојки'), h('th')),
         recipes.map((r) => h('tr', {},
+          h('td', {}, r.imageUrl ? h('img', { class: 'thumb', src: r.imageUrl, alt: '' }) : h('div', { class: 'thumb' })),
           h('td', {}, r.name),
           h('td', {}, meta.recipeCategories[r.category] ?? '—'),
           h('td', {}, r.servings),
@@ -282,6 +334,49 @@ function renderRecipeForm(r) {
 
   const catOptions = { '': '— без категорија —', ...meta.recipeCategories };
 
+  // The picture: 'keep' = leave as it is, 'set' = a newly chosen file (already shrunk), 'remove' = take it away.
+  // photo.fx / photo.fy: the point of the picture that stays in view in the round crop (0 to 1; drag the picture to move it).
+  const photo = { action: 'keep', blob: null, previewUrl: null, fx: r?.imageFocusX ?? 0.5, fy: r?.imageFocusY ?? 0.5, moved: false };
+  const note = h('span', { class: 'muted' }, 'JPEG, PNG или WebP. Се намалува автоматски на 1200 px. Повлечи ја сликата за да ја центрираш во кругот.');
+  const removeBtn = h('button', { type: 'button', class: 'danger', hidden: !r?.imageUrl, onclick: () => {
+    if (photo.previewUrl) { URL.revokeObjectURL(photo.previewUrl); photo.previewUrl = null; }
+    photo.action = r?.imageUrl ? 'remove' : 'keep'; photo.blob = null; photo.moved = false;
+    showPhoto(null);
+    removeBtn.hidden = true;
+    note.textContent = r?.imageUrl ? 'Сликата ќе се отстрани со „Зачувај“.' : 'Нема слика.';
+  } }, 'Отстрани слика');
+  let preview = h('div', { class: 'photo-preview' }, 'Нема слика');
+  const showPhoto = (url) => {
+    const el = url ? h('img', { class: 'photo-preview', src: url, alt: '', draggable: false }) : h('div', { class: 'photo-preview' }, 'Нема слика');
+    if (url) {
+      const place = () => { el.style.objectPosition = (photo.fx * 100) + '% ' + (photo.fy * 100) + '%'; };
+      place();
+      let drag = null;
+      el.addEventListener('pointerdown', (ev) => { ev.preventDefault(); el.setPointerCapture(ev.pointerId); drag = { x: ev.clientX, y: ev.clientY, fx: photo.fx, fy: photo.fy, started: false }; });
+      el.addEventListener('pointermove', (ev) => {
+        if (!drag || !el.naturalWidth) return;
+        // a plain click (or a tiny wobble) must not move anything
+        if (!drag.started) { if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 4) return; drag.started = true; drag.x = ev.clientX; drag.y = ev.clientY; }
+        // the picture is scaled to cover the square; only the longer side has spare room to move in
+        const box = el.clientWidth || 240;
+        const scale = Math.max(box / el.naturalWidth, box / el.naturalHeight);
+        const spareX = el.naturalWidth * scale - box;
+        const spareY = el.naturalHeight * scale - box;
+        const clamp = (v) => Math.min(1, Math.max(0, v));
+        // dragging the picture right shows more of its left side: the point moves the opposite way
+        if (spareX > 1) photo.fx = Math.round(clamp(drag.fx - (ev.clientX - drag.x) / spareX) * 1000) / 1000;
+        if (spareY > 1) photo.fy = Math.round(clamp(drag.fy - (ev.clientY - drag.y) / spareY) * 1000) / 1000;
+        photo.moved = true;
+        place();
+      });
+      const end = () => { drag = null; };
+      el.addEventListener('pointerup', end);
+      el.addEventListener('pointercancel', end);
+    }
+    preview.replaceWith(el);
+    preview = el;
+  };
+
   const form = h('form', { class: 'card', onsubmit: async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -303,12 +398,40 @@ function renderRecipeForm(r) {
       })),
     };
     try {
-      await api(r ? 'PUT' : 'POST', 'recipes' + (r ? '/' + r.id : ''), body);
-      flash(r ? 'Рецептот е ажуриран.' : 'Рецептот е додаден.');
+      const saved = await api(r ? 'PUT' : 'POST', 'recipes' + (r ? '/' + r.id : ''), body);
+      let photoProblem = null;
+      try {
+        if (photo.action === 'set' && photo.blob) await sendImage(saved.id, photo.blob, { x: photo.fx, y: photo.fy });
+        else if (photo.action === 'keep' && photo.moved && r?.imageUrl) await sendImageFocus(saved.id, photo.fx, photo.fy);
+        else if (photo.action === 'remove') await api('DELETE', 'recipes/' + saved.id + '/image');
+      } catch (ex) { photoProblem = ex.message; }
+      if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+      if (photoProblem) flash('Рецептот е зачуван, но сликата не: ' + photoProblem, false);
+      else flash(r ? 'Рецептот е ажуриран.' : 'Рецептот е додаден.');
       renderRecipes();
     } catch (ex) { flash(ex.message, false); window.scrollTo(0, 0); }
   } },
     h('strong', {}, r ? 'Уреди рецепт' : 'Нов рецепт'),
+    h('label', {}, 'Слика'),
+    h('div', { class: 'photo-box' }, preview,
+      h('div', { class: 'photo-actions' },
+        h('div', {},
+          h('input', { id: 'photo-input', type: 'file', accept: 'image/jpeg,image/png,image/webp', onchange: async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+              const blob = await shrinkPhoto(file);
+              if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+              photo.action = 'set'; photo.blob = blob; photo.fx = 0.5; photo.fy = 0.5; photo.previewUrl = URL.createObjectURL(blob);
+              showPhoto(photo.previewUrl);
+              removeBtn.hidden = false;
+              note.textContent = `Нова слика (${Math.round(blob.size / 1024)} KB). Ќе се зачува со „Зачувај“.`;
+            } catch (ex) { flash(ex.message || 'Сликата не може да се прочита.', false); }
+            e.target.value = '';
+          } }),
+          h('button', { type: 'button', onclick: () => $('#photo-input').click() }, 'Избери слика…')),
+        removeBtn,
+        note)),
     h('label', {}, 'Име'), h('input', { name: 'name', required: true, maxlength: 150, value: r?.name ?? '' }),
     h('label', {}, 'Опис'), h('input', { name: 'description', maxlength: 1000, value: r?.description ?? '' }),
     h('div', { class: 'row' },
@@ -326,6 +449,7 @@ function renderRecipeForm(r) {
       h('button', { type: 'button', onclick: renderRecipes }, 'Откажи')));
 
   $('#view').replaceChildren(form);
+  if (r?.imageUrl) showPhoto(r.imageUrl);
   window.scrollTo(0, 0);
 }
 
