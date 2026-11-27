@@ -25,6 +25,9 @@ object Spacing {
     /** Gap between the floating nav bar and the screen sides and bottom (plus the system inset). */
     val navBarMargin = 16.dp
 
+    /** The fade from the list into the opaque strip behind the nav bar; kept shorter than the gap above the bar so a FAB is not washed out. */
+    val navBarFadeHeight = 12.dp
+
     /**
      * Bottom content padding for tab-screen lists so the last item clears the
      * floating bar: bar height + its bottom margin + 16dp breathing room.

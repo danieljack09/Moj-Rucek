@@ -10,6 +10,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.Image
 import android.graphics.BitmapFactory
@@ -24,6 +25,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
+import com.mojrucek.app.repository.PictureFocus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -58,6 +61,7 @@ fun RecipeCover(
     content: @Composable BoxScope.(showsImage: Boolean) -> Unit = {}
 ) {
     val photo = rememberAssetPhoto(imageUri)
+    val focus = PictureFocus.of(imageUri)
     val showsImage = photo != null
     Box(
         modifier = modifier
@@ -71,6 +75,7 @@ fun RecipeCover(
                 bitmap = photo,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                alignment = BiasAlignment(focus.x * 2 - 1, focus.y * 2 - 1),
                 modifier = Modifier.fillMaxSize(PHOTO_FRACTION).clip(CircleShape)
             )
         } else {
@@ -100,11 +105,13 @@ fun RecipeCover(
 @Composable
 fun RecipeThumb(imageUri: String?, category: RecipeCategory?, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val photo = rememberAssetPhoto(imageUri)
+    val focus = PictureFocus.of(imageUri)
     if (photo != null) {
         Image(
             bitmap = photo,
             contentDescription = null,
             contentScale = ContentScale.Crop,
+            alignment = BiasAlignment(focus.x * 2 - 1, focus.y * 2 - 1),
             modifier = modifier.size(size).clip(CircleShape)
         )
     } else {
@@ -114,26 +121,38 @@ fun RecipeThumb(imageUri: String?, category: RecipeCategory?, modifier: Modifier
 
 private const val ASSET_PREFIX = "file:///android_asset/"
 
+/** Decodes [open]'s stream to at most [MAX_DECODE_PX] on the longest side (halving the size until it fits). */
+private fun decodeScaled(open: () -> java.io.InputStream): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    open().use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_DECODE_PX) sample *= 2
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    return open().use { BitmapFactory.decodeStream(it, null, options) }?.asImageBitmap()
+}
+
 /** Longest side a photo is decoded to; the largest well (recipe detail hero) is about 70% of the screen width. */
 private const val MAX_DECODE_PX = 1080
 
 /**
- * Loads a `file:///android_asset/` photo in the background; null for any other URI (or none),
- * while loading, or when the asset cannot be read. Other schemes are deliberately not handled.
+ * Loads a recipe photo in the background: a bundled `file:///android_asset/` photo, or the picture of a server recipe (an address of
+ * our own server, fetched once and then kept on the phone by [RecipeImageCache]). Null for any other URI (or none), while loading,
+ * when offline for a picture that was never fetched, or when it cannot be read. Other schemes are deliberately not handled.
  */
 @Composable
 private fun rememberAssetPhoto(imageUri: String?): ImageBitmap? {
-    val assetPath = imageUri?.takeIf { it.startsWith(ASSET_PREFIX) }?.removePrefix(ASSET_PREFIX) ?: return null
-    val assets = LocalContext.current.applicationContext.assets
-    val photo by produceState<ImageBitmap?>(initialValue = null, assetPath) {
+    val context = LocalContext.current.applicationContext
+    val cache = remember { com.mojrucek.app.repository.RecipeImageCacheHolder.get(context) }
+    val key = imageUri?.let { PictureFocus.strip(it) }?.takeIf { it.startsWith(ASSET_PREFIX) || cache.isOurs(it) } ?: return null
+    val photo by produceState<ImageBitmap?>(initialValue = null, key) {
         value = withContext(Dispatchers.IO) {
             runCatching {
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                assets.open(assetPath).use { BitmapFactory.decodeStream(it, null, bounds) }
-                var sample = 1
-                while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_DECODE_PX) sample *= 2
-                val options = BitmapFactory.Options().apply { inSampleSize = sample }
-                assets.open(assetPath).use { BitmapFactory.decodeStream(it, null, options) }?.asImageBitmap()
+                if (key.startsWith(ASSET_PREFIX)) {
+                    val assetPath = key.removePrefix(ASSET_PREFIX)
+                    decodeScaled { context.assets.open(assetPath) }
+                } else {
+                    cache.fetch(key)?.let { file -> decodeScaled { file.inputStream() } }
+                }
             }.getOrNull()
         }
     }

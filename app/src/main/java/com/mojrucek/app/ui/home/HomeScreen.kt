@@ -91,6 +91,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenRecipe: (Long) -> Unit,
     onOpenPlanner: () -> Unit,
+    /** Opens the Planner straight on the meal choice for this day (1 = Monday ... 7 = Sunday) of the current week. */
+    onPickMealForDay: (Int) -> Unit,
     onOpenLowStock: () -> Unit,
     onOpenShopping: () -> Unit,
     onOpenNextWeekPlanner: () -> Unit,
@@ -140,7 +142,8 @@ fun HomeScreen(
                 WeekPreview(
                     days = state.weekDays,
                     onOpenRecipe = onOpenRecipe,
-                    onOpenPlanner = onOpenPlanner
+                    onOpenPlanner = onOpenPlanner,
+                    onPickMealForDay = onPickMealForDay
                 )
             }
 
@@ -249,30 +252,30 @@ private fun DishCircle(icon: ImageVector, size: Dp) {
     }
 }
 
-private val shortDayNames = listOf("ПОН", "ВТО", "СРЕ", "ЧЕТ", "ПЕТ", "САБ", "НЕД")
-
 @Composable
 private fun WeekPreview(
     days: List<WeekDayUi>,
     onOpenRecipe: (Long) -> Unit,
-    onOpenPlanner: () -> Unit
+    onOpenPlanner: () -> Unit,
+    onPickMealForDay: (Int) -> Unit
 ) {
     // The planned day whose preview sheet is open; null when closed.
     var previewDay by remember { mutableStateOf<Int?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionHeader("Оваа недела")
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            days.forEach { day ->
-                DayPill(
-                    day = day,
-                    // Planned day: the meal preview sheet. Empty day: the planner, as before.
-                    onClick = { if (day.meal != null) previewDay = day.dayOfWeek else onOpenPlanner() },
-                    modifier = Modifier.weight(1f)
-                )
+        // Monday to Saturday two per row, Sunday as one wide tile.
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val onDayClick: (WeekDayUi) -> Unit = { day ->
+                // Planned day: the meal preview sheet. Empty day: straight to choosing the meal for that day.
+                if (day.meal != null) previewDay = day.dayOfWeek else onPickMealForDay(day.dayOfWeek)
             }
+            days.filter { it.dayOfWeek <= 6 }.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { day -> DayTile(day, { onDayClick(day) }, Modifier.weight(1f)) }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            days.firstOrNull { it.dayOfWeek == 7 }?.let { day -> DayTile(day, { onDayClick(day) }, Modifier.fillMaxWidth()) }
         }
     }
 
@@ -283,7 +286,7 @@ private fun WeekPreview(
             day = shown,
             meal = meal,
             onDismiss = { previewDay = null },
-            onChange = { previewDay = null; onOpenPlanner() },
+            onChange = { previewDay = null; onPickMealForDay(shown.dayOfWeek) },
             onOpenRecipe = { previewDay = null; onOpenRecipe(meal.recipeId) }
         )
     } else if (previewDay != null) {
@@ -376,9 +379,12 @@ private fun MealPreviewSheet(
     }
 }
 
-/** One tall day pill: today = green with a darkOlive outline, planned = card fill, empty = greenContainer. */
+/**
+ * One day of the week grid: the day name on top (small), the meal name taking most of the tile (up to three lines).
+ * Today = green with a darkOlive outline, planned = card fill, empty = greenContainer with "Избери јадење".
+ */
 @Composable
-private fun DayPill(day: WeekDayUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun DayTile(day: WeekDayUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = MojRucekTheme.colors
     val meal = day.meal
     val fill = when {
@@ -387,38 +393,39 @@ private fun DayPill(day: WeekDayUi, onClick: () -> Unit, modifier: Modifier = Mo
         else -> colors.greenContainer
     }
     val textColor = if (day.isToday) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface
-    val description = MacedonianDayNames[day.dayOfWeek - 1] + (meal?.let { ": ${it.recipeName}" } ?: "")
+    val dayName = MacedonianDayNames[day.dayOfWeek - 1]
+    val description = dayName + (meal?.let { ": ${it.recipeName}" } ?: "")
     Surface(
         onClick = onClick,
-        modifier = modifier.height(96.dp).semantics { contentDescription = description },
-        shape = PillShape,
+        modifier = modifier.height(100.dp).semantics { contentDescription = description },
+        shape = MaterialTheme.shapes.large,
         color = fill,
         contentColor = textColor,
         border = if (day.isToday) BorderStroke(2.dp, colors.darkOlive) else null
     ) {
         Column(
-            // The pill's own description ("Четврток: Тавче гравче") replaces the short label and name for TalkBack.
-            modifier = Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 12.dp).clearAndSetSemantics {},
-            horizontalAlignment = Alignment.CenterHorizontally
+            // The tile's own description ("Четврток: Тавче гравче") replaces the visible texts for TalkBack.
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 10.dp).clearAndSetSemantics {},
+            horizontalAlignment = Alignment.Start
         ) {
             Text(
-                shortDayNames[day.dayOfWeek - 1],
-                style = MaterialTheme.typography.labelSmall,
+                dayName,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (day.isToday) textColor else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (meal != null) {
                     Text(
                         meal.recipeName,
-                        style = MaterialTheme.typography.labelSmall,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
                 } else {
                     Text(
-                        "+",
-                        style = MaterialTheme.typography.labelLarge,
+                        "Избери јадење",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = if (day.isToday) textColor else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

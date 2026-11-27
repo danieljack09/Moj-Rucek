@@ -9,6 +9,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import com.mojrucek.app.ui.components.BottomBarScrollState
+import com.mojrucek.app.ui.components.HideOnScrollConnection
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -108,6 +117,16 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
+    val headerScroll = remember { BottomBarScrollState() }
+    val headerConnection = remember { HideOnScrollConnection(headerScroll) }
+    val activeFilters = (if (state.categoryFilter != null) 1 else 0) +
+        (if (state.lowStockOnly) 1 else 0) +
+        (if (state.expiringOnly) 1 else 0)
+
+    if (showFilters) {
+        IngredientFiltersSheet(state = state, viewModel = viewModel, onDismiss = { showFilters = false })
+    }
 
     // No top bar: the Scaffold's top padding is the status-bar inset, and ScreenHeader sits below it.
     Scaffold(
@@ -115,76 +134,72 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
             AppFab(onClick = { showAddDialog = true }, contentDescription = "Додади намирница")
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-            ScreenHeader(
-                title = "Намирници",
-                modifier = Modifier.padding(horizontal = Spacing.screenHorizontal)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
+                .nestedScroll(headerConnection)
+        ) {
+            // The title (with the sort button) and the search line slide away when the list is scrolled down and return on a small scroll up.
+            Column(
+                modifier = Modifier
+                    .clipToBounds()   // clips to the (shrinking) size reported below, so nothing shows above the list
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        val shown = (placeable.height - headerScroll.offset).roundToInt().coerceAtLeast(0)
+                        layout(placeable.width, shown) { placeable.place(0, -headerScroll.offset.roundToInt()) }
+                    }
+                    .onSizeChanged { headerScroll.maxOffset = it.height.toFloat() }
             ) {
-                Box {
-                    CircleIconButton(
-                        Icons.AutoMirrored.Outlined.Sort,
-                        contentDescription = "Подреди",
-                        onClick = { showSortMenu = true }
-                    )
-                    AppDropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                        AppDropdownMenuItem(
-                            "Име",
-                            onClick = { viewModel.setSort(IngredientSort.NAME); showSortMenu = false },
-                            leadingIcon = Icons.Outlined.SortByAlpha,
-                            selected = state.sort == IngredientSort.NAME
+                ScreenHeader(
+                    title = "Намирници",
+                    modifier = Modifier.padding(horizontal = Spacing.screenHorizontal)
+                ) {
+                    Box {
+                        CircleIconButton(
+                            Icons.AutoMirrored.Outlined.Sort,
+                            contentDescription = "Подреди",
+                            onClick = { showSortMenu = true }
                         )
-                        AppDropdownMenuItem(
-                            "Категорија",
-                            onClick = { viewModel.setSort(IngredientSort.CATEGORY); showSortMenu = false },
-                            leadingIcon = Icons.Outlined.Category,
-                            selected = state.sort == IngredientSort.CATEGORY
-                        )
-                        AppDropdownMenuItem(
-                            "Количина",
-                            onClick = { viewModel.setSort(IngredientSort.QUANTITY); showSortMenu = false },
-                            leadingIcon = Icons.Outlined.Numbers,
-                            selected = state.sort == IngredientSort.QUANTITY
-                        )
-                        AppDropdownMenuItem(
-                            "Рок на траење",
-                            onClick = { viewModel.setSort(IngredientSort.EXPIRATION); showSortMenu = false },
-                            leadingIcon = Icons.Outlined.Event,
-                            selected = state.sort == IngredientSort.EXPIRATION
-                        )
+                        AppDropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            AppDropdownMenuItem(
+                                "Име",
+                                onClick = { viewModel.setSort(IngredientSort.NAME); showSortMenu = false },
+                                leadingIcon = Icons.Outlined.SortByAlpha,
+                                selected = state.sort == IngredientSort.NAME
+                            )
+                            AppDropdownMenuItem(
+                                "Категорија",
+                                onClick = { viewModel.setSort(IngredientSort.CATEGORY); showSortMenu = false },
+                                leadingIcon = Icons.Outlined.Category,
+                                selected = state.sort == IngredientSort.CATEGORY
+                            )
+                            AppDropdownMenuItem(
+                                "Количина",
+                                onClick = { viewModel.setSort(IngredientSort.QUANTITY); showSortMenu = false },
+                                leadingIcon = Icons.Outlined.Numbers,
+                                selected = state.sort == IngredientSort.QUANTITY
+                            )
+                            AppDropdownMenuItem(
+                                "Рок на траење",
+                                onClick = { viewModel.setSort(IngredientSort.EXPIRATION); showSortMenu = false },
+                                leadingIcon = Icons.Outlined.Event,
+                                selected = state.sort == IngredientSort.EXPIRATION
+                            )
+                        }
                     }
                 }
-            }
 
-            PillSearchField(
-                value = state.searchQuery,
-                onValueChange = viewModel::setSearchQuery,
-                placeholder = "Пребарај",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.screenHorizontal, vertical = 8.dp)
-            )
-
-            // Category is a single choice (filled); the two filters below are independent toggles (outlined).
-            CategoryChipsRow(
-                categories = IngredientCategory.entries,
-                selected = state.categoryFilter,
-                onSelect = viewModel::setCategoryFilter,
-                counts = state.categoryCounts,
-                totalCount = state.allIngredients.size,
-                contentPadding = PaddingValues(horizontal = Spacing.screenHorizontal)
-            )
-            ChipRow {
-                AppChip(
-                    "При крај",
-                    selected = state.lowStockOnly,
-                    onClick = { viewModel.setLowStockOnly(!state.lowStockOnly) },
-                    selectedStyle = ChipSelectionStyle.Outlined
-                )
-                AppChip(
-                    "Истекува наскоро",
-                    selected = state.expiringOnly,
-                    onClick = { viewModel.setExpiringOnly(!state.expiringOnly) },
-                    selectedStyle = ChipSelectionStyle.Outlined
+                PillSearchField(
+                    value = state.searchQuery,
+                    onValueChange = viewModel::setSearchQuery,
+                    placeholder = "Пребарај",
+                    onFilterClick = { showFilters = true },
+                    filterContentDescription = "Филтри",
+                    filterBadge = activeFilters,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.screenHorizontal, vertical = 8.dp)
                 )
             }
 
@@ -269,6 +284,47 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
             dismissLabel = "Додади посебно",
             onDismiss = viewModel::confirmAddAsSeparateEntry
         )
+    }
+}
+
+/** The ingredient filters, moved off the main screen: they apply as soon as a chip is tapped; "Исчисти" resets them all. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun IngredientFiltersSheet(state: IngredientsUiState, viewModel: IngredientsViewModel, onDismiss: () -> Unit) {
+    AppBottomSheet(
+        onDismissRequest = onDismiss,
+        title = "Филтри",
+        closeContentDescription = "Затвори",
+        secondaryActionLabel = "Исчисти",
+        onSecondaryAction = {
+            viewModel.setCategoryFilter(null)
+            viewModel.setLowStockOnly(false)
+            viewModel.setExpiringOnly(false)
+        },
+        primaryActionLabel = "Прикажи",
+        onPrimaryAction = onDismiss
+    ) {
+        Text("Категорија", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            // Category is a single choice (filled).
+            AppChip("Сите (${state.allIngredients.size})", selected = state.categoryFilter == null, onClick = { viewModel.setCategoryFilter(null) }, selectedStyle = ChipSelectionStyle.Filled)
+            IngredientCategory.entries.forEach { category ->
+                val count = state.categoryCounts[category]
+                AppChip(
+                    label = if (count != null) "${category.displayName} ($count)" else category.displayName,
+                    selected = state.categoryFilter == category,
+                    onClick = { viewModel.setCategoryFilter(category) },
+                    selectedStyle = ChipSelectionStyle.Filled,
+                    leadingIcon = category.icon()
+                )
+            }
+        }
+        Text("Статус", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            // The two statuses are independent toggles (outlined when on).
+            AppChip("При крај", selected = state.lowStockOnly, onClick = { viewModel.setLowStockOnly(!state.lowStockOnly) }, selectedStyle = ChipSelectionStyle.Outlined)
+            AppChip("Истекува наскоро", selected = state.expiringOnly, onClick = { viewModel.setExpiringOnly(!state.expiringOnly) }, selectedStyle = ChipSelectionStyle.Outlined)
+        }
     }
 }
 

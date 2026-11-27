@@ -2,6 +2,19 @@ package com.mojrucek.app.ui.recipes
 
 import com.mojrucek.app.ui.components.AppFab
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import com.mojrucek.app.ui.components.AppBottomSheet
+import com.mojrucek.app.ui.components.BottomBarScrollState
+import com.mojrucek.app.ui.components.HideOnScrollConnection
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +64,16 @@ fun RecipesScreen(
     onAddRecipe: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    var showFilters by remember { mutableStateOf(false) }
+    val headerScroll = remember { BottomBarScrollState() }
+    val headerConnection = remember { HideOnScrollConnection(headerScroll) }
+    val activeFilters = (if (state.readinessFilter != ReadinessFilter.ALL) 1 else 0) +
+        (if (state.maxPrepPlusCookMinutes != null) 1 else 0) +
+        (if (state.favoritesOnly) 1 else 0)
+
+    if (showFilters) {
+        RecipeFiltersSheet(state = state, viewModel = viewModel, onDismiss = { showFilters = false })
+    }
 
     // No top bar: the Scaffold's top padding is the status-bar inset, and ScreenHeader sits below it.
     Scaffold(
@@ -58,78 +81,37 @@ fun RecipesScreen(
             AppFab(onClick = onAddRecipe, contentDescription = "Нов рецепт")
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-            ScreenHeader(
-                title = "Рецепти",
-                modifier = Modifier.padding(horizontal = Spacing.screenHorizontal)
-            )
-
-            // The screen has no filter sheet or sort, so the search pill has no filter button beside it.
-            PillSearchField(
-                value = state.searchQuery,
-                onValueChange = viewModel::setSearchQuery,
-                placeholder = "Пребарај рецепти",
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
+                .nestedScroll(headerConnection)
+        ) {
+            // The title and the search line slide away when the list is scrolled down and return on a small scroll up.
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.screenHorizontal, vertical = 8.dp)
-            )
-
-            // Readiness is a single choice (filled when selected); "Омилени" is an independent toggle
-            // on the same row (outlined when selected), exactly as before.
-            ChipRow {
-                AppChip(
-                    "Сите",
-                    selected = state.readinessFilter == ReadinessFilter.ALL,
-                    onClick = { viewModel.setReadinessFilter(ReadinessFilter.ALL) },
-                    selectedStyle = ChipSelectionStyle.Filled
+                    .clipToBounds()   // clips to the (shrinking) size reported below, so nothing shows above the list
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        val shown = (placeable.height - headerScroll.offset).roundToInt().coerceAtLeast(0)
+                        layout(placeable.width, shown) { placeable.place(0, -headerScroll.offset.roundToInt()) }
+                    }
+                    .onSizeChanged { headerScroll.maxOffset = it.height.toFloat() }
+            ) {
+                ScreenHeader(
+                    title = "Рецепти",
+                    modifier = Modifier.padding(horizontal = Spacing.screenHorizontal)
                 )
-                AppChip(
-                    "Можам да зготвам сега",
-                    selected = state.readinessFilter == ReadinessFilter.CAN_COOK_NOW,
-                    onClick = { viewModel.setReadinessFilter(ReadinessFilter.CAN_COOK_NOW) },
-                    selectedStyle = ChipSelectionStyle.Filled
-                )
-                AppChip(
-                    "Речиси подготвено",
-                    selected = state.readinessFilter == ReadinessFilter.ALMOST_READY,
-                    onClick = { viewModel.setReadinessFilter(ReadinessFilter.ALMOST_READY) },
-                    selectedStyle = ChipSelectionStyle.Filled
-                )
-                AppChip(
-                    "Треба да купам намирници",
-                    selected = state.readinessFilter == ReadinessFilter.NEEDS_SHOPPING,
-                    onClick = { viewModel.setReadinessFilter(ReadinessFilter.NEEDS_SHOPPING) },
-                    selectedStyle = ChipSelectionStyle.Filled
-                )
-                AppChip(
-                    "Омилени",
-                    selected = state.favoritesOnly,
-                    onClick = { viewModel.setFavoritesOnly(!state.favoritesOnly) },
-                    selectedStyle = ChipSelectionStyle.Outlined
-                )
-            }
-
-            // Time is a single choice.
-            ChipRow {
-                AppChip(
-                    "Секое време",
-                    selected = state.maxPrepPlusCookMinutes == null,
-                    onClick = { viewModel.setMaxTime(null) },
-                    selectedStyle = ChipSelectionStyle.Filled
-                )
-                AppChip(
-                    "До 30 мин",
-                    selected = state.maxPrepPlusCookMinutes == 30,
-                    onClick = { viewModel.setMaxTime(30) },
-                    selectedStyle = ChipSelectionStyle.Filled,
-                    leadingIcon = Icons.Outlined.Schedule
-                )
-                AppChip(
-                    "До 60 мин",
-                    selected = state.maxPrepPlusCookMinutes == 60,
-                    onClick = { viewModel.setMaxTime(60) },
-                    selectedStyle = ChipSelectionStyle.Filled,
-                    leadingIcon = Icons.Outlined.Schedule
+                PillSearchField(
+                    value = state.searchQuery,
+                    onValueChange = viewModel::setSearchQuery,
+                    placeholder = "Пребарај рецепти",
+                    onFilterClick = { showFilters = true },
+                    filterContentDescription = "Филтри",
+                    filterBadge = activeFilters,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.screenHorizontal, vertical = 8.dp)
                 )
             }
 
@@ -204,5 +186,40 @@ private fun RecipeGridCard(item: RecipeListItem, onClick: () -> Unit, onToggleFa
             color = readinessColor,
             maxLines = 1
         )
+    }
+}
+
+/** The recipe filters, moved off the main screen: they apply as soon as a chip is tapped; "Исчисти" resets them all. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun RecipeFiltersSheet(state: RecipesUiState, viewModel: RecipesViewModel, onDismiss: () -> Unit) {
+    AppBottomSheet(
+        onDismissRequest = onDismiss,
+        title = "Филтри",
+        closeContentDescription = "Затвори",
+        secondaryActionLabel = "Исчисти",
+        onSecondaryAction = {
+            viewModel.setReadinessFilter(ReadinessFilter.ALL)
+            viewModel.setMaxTime(null)
+            viewModel.setFavoritesOnly(false)
+        },
+        primaryActionLabel = "Прикажи",
+        onPrimaryAction = onDismiss
+    ) {
+        Text("Достапност", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            // Readiness is a single choice (filled when selected); "Омилени" is an independent toggle (outlined when selected).
+            AppChip("Сите", selected = state.readinessFilter == ReadinessFilter.ALL, onClick = { viewModel.setReadinessFilter(ReadinessFilter.ALL) }, selectedStyle = ChipSelectionStyle.Filled)
+            AppChip("Можам да зготвам сега", selected = state.readinessFilter == ReadinessFilter.CAN_COOK_NOW, onClick = { viewModel.setReadinessFilter(ReadinessFilter.CAN_COOK_NOW) }, selectedStyle = ChipSelectionStyle.Filled)
+            AppChip("Речиси подготвено", selected = state.readinessFilter == ReadinessFilter.ALMOST_READY, onClick = { viewModel.setReadinessFilter(ReadinessFilter.ALMOST_READY) }, selectedStyle = ChipSelectionStyle.Filled)
+            AppChip("Треба да купам намирници", selected = state.readinessFilter == ReadinessFilter.NEEDS_SHOPPING, onClick = { viewModel.setReadinessFilter(ReadinessFilter.NEEDS_SHOPPING) }, selectedStyle = ChipSelectionStyle.Filled)
+            AppChip("Омилени", selected = state.favoritesOnly, onClick = { viewModel.setFavoritesOnly(!state.favoritesOnly) }, selectedStyle = ChipSelectionStyle.Outlined)
+        }
+        Text("Време", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+            AppChip("Секое време", selected = state.maxPrepPlusCookMinutes == null, onClick = { viewModel.setMaxTime(null) }, selectedStyle = ChipSelectionStyle.Filled)
+            AppChip("До 30 мин", selected = state.maxPrepPlusCookMinutes == 30, onClick = { viewModel.setMaxTime(30) }, selectedStyle = ChipSelectionStyle.Filled, leadingIcon = Icons.Outlined.Schedule)
+            AppChip("До 60 мин", selected = state.maxPrepPlusCookMinutes == 60, onClick = { viewModel.setMaxTime(60) }, selectedStyle = ChipSelectionStyle.Filled, leadingIcon = Icons.Outlined.Schedule)
+        }
     }
 }

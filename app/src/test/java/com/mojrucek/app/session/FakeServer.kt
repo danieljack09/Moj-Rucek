@@ -15,7 +15,7 @@ import kotlin.concurrent.thread
 class FakeServer {
     class Recorded(val method: String, val path: String, val headers: Map<String, String>, val body: ByteArray)
 
-    class Reply(val code: Int, val body: String = "", val headers: Map<String, String> = emptyMap(), val delayMs: Long = 0)
+    class Reply(val code: Int, val body: String = "", val headers: Map<String, String> = emptyMap(), val delayMs: Long = 0, val bytes: ByteArray? = null)
 
     val requests = CopyOnWriteArrayList<Recorded>()
 
@@ -55,7 +55,7 @@ class FakeServer {
 
                 val reply = handler(recorded)
                 if (reply.delayMs > 0) Thread.sleep(reply.delayMs)
-                val bytes = reply.body.toByteArray()
+                val bytes = reply.bytes ?: reply.body.toByteArray()
                 val head = StringBuilder("HTTP/1.1 ${reply.code} Test\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n")
                 reply.headers.forEach { (k, v) -> head.append("$k: $v\r\n") }
                 head.append("\r\n")

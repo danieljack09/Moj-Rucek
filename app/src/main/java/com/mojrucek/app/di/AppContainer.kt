@@ -40,7 +40,7 @@ class AppContainer(context: Context) {
     val ingredientRepository = IngredientRepository(database.ingredientDao(), currentOwner)
     val recipeRepository = RecipeRepository(database.recipeDao(), database.favoriteDao(), currentOwner)
     val settingsRepository = SettingsRepository(database.appSettingsDao())
-    val catalogSyncRepository = CatalogSyncRepository(context, database)
+    val catalogSyncRepository = CatalogSyncRepository(context, database, com.mojrucek.app.repository.RecipeImageCacheHolder.get(context))
     val shoppingListRepository = ShoppingListRepository(database.shoppingListDao(), ingredientRepository, currentOwner)
     val plannerRepository = PlannerRepository(
         database.plannerDao(),

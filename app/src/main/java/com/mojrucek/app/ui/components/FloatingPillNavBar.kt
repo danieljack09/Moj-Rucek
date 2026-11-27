@@ -3,6 +3,7 @@ package com.mojrucek.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Kitchen
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -37,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -61,7 +64,9 @@ data class PillNavItem(
 /**
  * Spec item 1: a 64dp greenContainer pill floating 16dp from the screen sides and
  * bottom (plus the [windowInsets], navigation bar by default), with a soft 4dp
- * shadow at 8% black. Each item is a 48dp circle: inactive = transparent with a
+ * shadow at 8% black. Behind the pill, its margins and the system navigation bar the
+ * screen background is OPAQUE (with a short fade above it), so scrolling content never
+ * shows around or under the bar. Each item is a 48dp circle: inactive = transparent with a
  * darkOlive line icon, active = darkOlive fill with an onDarkOlive filled icon.
  */
 @Composable
@@ -74,46 +79,58 @@ fun FloatingPillNavBar(
 ) {
     val colors = MojRucekTheme.colors
     val shadowColor = Color.Black.copy(alpha = 0.08f)
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(windowInsets)
-            .padding(start = Spacing.navBarMargin, end = Spacing.navBarMargin, bottom = Spacing.navBarMargin)
-    ) {
-        Row(
+    val screenBackground = MaterialTheme.colorScheme.background
+    Column(modifier = modifier.fillMaxWidth()) {
+        // A short fade, so the list does not end in a hard line just above the bar (it stays inside the
+        // gap between the bar and a FAB, which sits 16dp above the bar).
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(Spacing.navBarFadeHeight)
+                .background(Brush.verticalGradient(listOf(screenBackground.copy(alpha = 0f), screenBackground)))
+        )
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(Spacing.navBarHeight)
-                .shadow(elevation = 4.dp, shape = PillShape, ambientColor = shadowColor, spotColor = shadowColor)
-                .clip(PillShape)
-                .background(colors.greenContainer)
-                .padding(horizontal = 8.dp)
-                .selectableGroup(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+                .background(screenBackground)
+                .windowInsetsPadding(windowInsets)
+                .padding(start = Spacing.navBarMargin, end = Spacing.navBarMargin, bottom = Spacing.navBarMargin)
         ) {
-            items.forEach { item ->
-                val selected = item.route == selectedRoute
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(if (selected) colors.darkOlive else Color.Transparent)
-                        .selectable(
-                            selected = selected,
-                            onClick = { onSelect(item) },
-                            role = Role.Tab,
-                            interactionSource = null,
-                            indication = ripple()
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (selected) item.selectedIcon else item.icon,
-                        contentDescription = item.label,
-                        tint = if (selected) colors.onDarkOlive else colors.darkOlive,
-                        modifier = Modifier.size(24.dp)
-                    )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(Spacing.navBarHeight)
+                    .shadow(elevation = 4.dp, shape = PillShape, ambientColor = shadowColor, spotColor = shadowColor)
+                    .clip(PillShape)
+                    .background(colors.greenContainer)
+                    .padding(horizontal = 8.dp)
+                    .selectableGroup(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEach { item ->
+                    val selected = item.route == selectedRoute
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(if (selected) colors.darkOlive else Color.Transparent)
+                            .selectable(
+                                selected = selected,
+                                onClick = { onSelect(item) },
+                                role = Role.Tab,
+                                interactionSource = null,
+                                indication = ripple()
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (selected) item.selectedIcon else item.icon,
+                            contentDescription = item.label,
+                            tint = if (selected) colors.onDarkOlive else colors.darkOlive,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }

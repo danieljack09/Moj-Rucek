@@ -4,6 +4,26 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.background
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.animate
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
+import com.mojrucek.app.ui.components.BottomBarScrollState
+import com.mojrucek.app.ui.components.HideOnScrollConnection
+import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -59,14 +79,22 @@ fun MojRucekNavHost(container: AppContainer) {
     val navController = rememberNavController()
     var showLowStockOnly by remember { mutableStateOf(false) }
     var showNextWeekInPlanner by remember { mutableStateOf(false) }
+    // One-shot: a day (1..7) of this week to choose the meal for as soon as the Planner opens (from a Home day tile).
+    var pickDayInPlanner by remember { mutableStateOf<Int?>(null) }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = bottomNavItems.any { it.dest.route == currentRoute }
+
+    // The bar slides off the bottom while a list is scrolled down and returns on a small scroll back up.
+    val barScroll = remember { BottomBarScrollState() }
+    LaunchedEffect(currentRoute) { barScroll.reset() }
+    val barScrollConnection = remember { HideOnScrollConnection(barScroll) }
 
     GuestExpiredDialog(container, onOpenSettings = { navController.navigate(Dest.Settings.route) })
     SyncConflictDialog(container)
 
     Scaffold(
+        modifier = Modifier.nestedScroll(barScrollConnection),
         // Edge-to-edge: the outer Scaffold reserves no space. Screen content draws behind the
         // floating nav bar (each tab list ends with Spacing.navBarClearance), and each screen's
         // own Scaffold/TopAppBar handles the status bar.
@@ -75,6 +103,9 @@ fun MojRucekNavHost(container: AppContainer) {
         bottomBar = {
             if (showBottomBar) {
                 FloatingPillNavBar(
+                    modifier = Modifier
+                        .onSizeChanged { barScroll.maxOffset = it.height.toFloat() }
+                        .offset { IntOffset(0, barScroll.offset.roundToInt()) },
                     items = pillNavItems,
                     selectedRoute = currentRoute,
                     onSelect = { item ->
@@ -88,10 +119,15 @@ fun MojRucekNavHost(container: AppContainer) {
             }
         }
     ) { _ ->
+      Box(Modifier.fillMaxSize()) {
         NavHost(
             navController = navController,
             startDestination = Dest.Home.route,
-            modifier = Modifier.fillMaxSize(),
+            // The four tab screens draw behind the floating bar (which has its own solid strip). Every other screen
+            // (recipe, settings, ...) ends above the system navigation bar, so nothing scrolls under its buttons.
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (showBottomBar) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars)),
             enterTransition = { fadeIn(tween(NAV_FADE_MILLIS)) },
             exitTransition = { fadeOut(tween(NAV_FADE_MILLIS)) },
             popEnterTransition = { fadeIn(tween(NAV_FADE_MILLIS)) },
@@ -106,6 +142,14 @@ fun MojRucekNavHost(container: AppContainer) {
                     onOpenSettings = { navController.navigate(Dest.Settings.route) },
                     onOpenRecipe = { id -> navController.navigate(Dest.RecipeDetail.path(id)) },
                     onOpenPlanner = {
+                        navController.navigate(Dest.Planner.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onPickMealForDay = { dayOfWeek ->
+                        pickDayInPlanner = dayOfWeek
                         navController.navigate(Dest.Planner.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -182,7 +226,9 @@ fun MojRucekNavHost(container: AppContainer) {
                 PlannerScreen(
                     viewModel = vm,
                     onOpenRecipe = { id -> navController.navigate(Dest.RecipeDetail.path(id)) },
-                    onOpenSettings = { navController.navigate(Dest.Settings.route) }
+                    onOpenSettings = { navController.navigate(Dest.Settings.route) },
+                    requestedDay = pickDayInPlanner,
+                    onRequestHandled = { pickDayInPlanner = null }
                 )
             }
 
@@ -272,5 +318,16 @@ fun MojRucekNavHost(container: AppContainer) {
                 )
             }
         }
+        // A solid strip behind the phone's own buttons: when the bar has slid away, content never shows through them.
+        if (showBottomBar) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                    .background(MaterialTheme.colorScheme.background)
+            )
+        }
+      }
     }
 }

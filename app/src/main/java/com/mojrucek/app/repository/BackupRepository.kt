@@ -65,7 +65,7 @@ class BackupRepository(
         val plannedRecipeIds = allPlans.flatMap { it.meals }.mapNotNull { it.recipeId }.toSet()
         val referencedServerStubs = all
             .filter { it.recipe.serverId != null && (it.recipe.isFavorite || it.recipe.id in plannedRecipeIds) }
-            .map { it.recipe.copy(createdAt = 0, updatedAt = 0) }
+            .map { it.recipe.copy(createdAt = 0, updatedAt = 0, imageUri = null) }   // dates and the picture address change on their own
         val data = BackupData(
             exportedAtEpochMillis = System.currentTimeMillis(),
             ingredients = ingredientRepository.getAllOnce(ownerKey),

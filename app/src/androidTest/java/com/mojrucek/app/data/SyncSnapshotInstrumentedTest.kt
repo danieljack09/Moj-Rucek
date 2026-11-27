@@ -108,6 +108,7 @@ class SyncSnapshotInstrumentedTest {
         val server = list(snap, "recipes").first { it.jsonObject["serverId"]?.jsonPrimitive?.content == "77" }.jsonObject
         assertEquals("a server recipe is a stub: no dates", "0", server["createdAt"]!!.jsonPrimitive.content)
         assertEquals("0", server["updatedAt"]!!.jsonPrimitive.content)
+        assertTrue("and no picture address (the catalog sets it)", server["imageUri"] == null || server["imageUri"].toString() == "null")
         assertEquals("and its lines are not in it", 1, list(snap, "recipeIngredients").size)
     }
 

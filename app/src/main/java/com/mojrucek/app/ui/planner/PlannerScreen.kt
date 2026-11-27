@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,10 +78,26 @@ import com.mojrucek.app.domain.text.MkPlural
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit, onOpenSettings: () -> Unit = {}) {
+fun PlannerScreen(
+    viewModel: PlannerViewModel,
+    onOpenRecipe: (Long) -> Unit,
+    onOpenSettings: () -> Unit = {},
+    /** A day (1 = Monday ... 7 = Sunday) of the CURRENT week whose meal choice should open at once; null = just show the planner. */
+    requestedDay: Int? = null,
+    onRequestHandled: () -> Unit = {}
+) {
     val state by viewModel.uiState.collectAsState()
     var dayBeingEdited by remember { mutableStateOf<Int?>(null) }
     var pickerRecipes by remember { mutableStateOf<List<RecipeWithIngredients>>(emptyList()) }
+
+    // Coming from a day tile on Home: show this week and open the meal choice for that day, so no second tap is needed.
+    LaunchedEffect(requestedDay) {
+        val day = requestedDay ?: return@LaunchedEffect
+        viewModel.goToThisWeek()
+        viewModel.recipesForPicker { pickerRecipes = it }
+        dayBeingEdited = day
+        onRequestHandled()
+    }
 
     // No top bar: the Scaffold's top padding is the status-bar inset, and the header sits below it.
     Scaffold { padding ->
@@ -163,6 +180,7 @@ fun PlannerScreen(viewModel: PlannerViewModel, onOpenRecipe: (Long) -> Unit, onO
 
     dayBeingEdited?.let { day ->
         DayRecipePickerDialog(
+            dayName = dayName(day),
             recipes = pickerRecipes,
             currentDays = state.days,
             onDismiss = { dayBeingEdited = null },
@@ -438,6 +456,7 @@ private fun ReadinessPills(day: DayPlanUi, neutralContainer: Color) {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun DayRecipePickerDialog(
+    dayName: String,
     recipes: List<RecipeWithIngredients>,
     currentDays: List<DayPlanUi>,
     onDismiss: () -> Unit,
@@ -448,7 +467,7 @@ private fun DayRecipePickerDialog(
     val daysWithMeals = currentDays.filter { it.recipeId != null }
     AppBottomSheet(
         onDismissRequest = onDismiss,
-        title = "Избери рецепт",
+        title = "Избери рецепт за $dayName",
         closeContentDescription = "Затвори",
         secondaryActionLabel = "Испразни ден",
         onSecondaryAction = onClear,

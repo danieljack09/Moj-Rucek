@@ -53,7 +53,9 @@ fun PillSearchField(
     onSearch: (() -> Unit)? = null,
     onFilterClick: (() -> Unit)? = null,
     filterContentDescription: String? = null,
-    filterIcon: ImageVector = Icons.Outlined.Tune
+    filterIcon: ImageVector = Icons.Outlined.Tune,
+    /** When above 0, a small round count sits on the filter button (how many filters are active). */
+    filterBadge: Int = 0
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
@@ -103,11 +105,25 @@ fun PillSearchField(
             }
         )
         if (onFilterClick != null) {
-            CircleIconButton(
-                icon = filterIcon,
-                contentDescription = filterContentDescription,
-                onClick = onFilterClick
-            )
+            Box {
+                CircleIconButton(
+                    icon = filterIcon,
+                    contentDescription = filterContentDescription,
+                    onClick = onFilterClick
+                )
+                if (filterBadge > 0) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .size(20.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(colors.primary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(filterBadge.toString(), style = MaterialTheme.typography.labelSmall, color = colors.onPrimary)
+                    }
+                }
+            }
         }
     }
 }

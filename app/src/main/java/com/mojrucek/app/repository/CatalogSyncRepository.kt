@@ -28,7 +28,11 @@ sealed interface SyncResult {
  * The server is the source of truth: whatever it holds is what the app shows.
  * Incremental via `since`; deletions on the server delete here too.
  */
-class CatalogSyncRepository(context: Context, private val database: AppDatabase) {
+class CatalogSyncRepository(
+    context: Context,
+    private val database: AppDatabase,
+    private val images: RecipeImageCache? = null
+) {
 
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
@@ -44,6 +48,8 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
             val body = download("$CATALOG_URL?since=$since")
             val catalog = json.decodeFromString<CatalogResponse>(body)
             apply(catalog)
+            // Fetch the new pictures now, so the recipes show them offline too (a failure is simply tried again when one is shown).
+            images?.prefetch(catalog.recipes.filter { !it.deleted }.mapNotNull { it.imageUrl }.map { ServerConfig.BASE_URL + it })
             prefs.edit().putLong(KEY_SINCE, catalog.serverTime).apply()
             SyncResult.Success(catalog.ingredients.size, catalog.recipes.size)
         } catch (e: Exception) {
@@ -103,7 +109,8 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
                 category = RecipeCategory.fromStorageName(r.category),
                 tags = emptyList(),
                 notes = null,
-                imageUri = existing?.imageUri,
+                // A server recipe's picture is the one the server names (or none); it is fetched and kept by RecipeImageCache.
+                imageUri = r.imageUrl?.let { PictureFocus.attach(ServerConfig.BASE_URL + it, r.imageFocusX, r.imageFocusY) },
                 isFavorite = existing?.isFavorite ?: false,
                 isUserCreated = false,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
@@ -160,6 +167,11 @@ class CatalogSyncRepository(context: Context, private val database: AppDatabase)
         val instructionSteps: List<String> = emptyList(),
         val notes: String? = null,
         val ingredients: List<ServerLine> = emptyList(),
+        /** Address of the recipe's picture on the server (e.g. "/img/12-0123456789abcdef.jpg"), or null. */
+        val imageUrl: String? = null,
+        /** Which point of the picture stays in view when it is cropped: 0 = left/top edge, 0.5 = middle, 1 = right/bottom edge. */
+        val imageFocusX: Float? = null,
+        val imageFocusY: Float? = null,
         val deleted: Boolean = false
     )
 
