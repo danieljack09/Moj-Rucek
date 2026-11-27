@@ -38,7 +38,9 @@ class AccountSwitchRepository(
     private val context: Context,
     private val database: AppDatabase,
     private val backupRepository: BackupRepository,
-    private val owner: CurrentOwner
+    private val owner: CurrentOwner,
+    /** Records which account a copy ended up with, so deleting that account deletes the copy too. */
+    private val index: SwitchCopyIndex = InMemorySwitchCopyIndex()
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -53,7 +55,8 @@ class AccountSwitchRepository(
             }
             val dir = File(context.filesDir, SNAPSHOT_DIR).apply { mkdirs() }
             val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
-            val file = File(dir, "mojrucek-pred-promena-$stamp.json")
+            // Named after the guest that made it (a short tag), so deleting that guest account can find it.
+            val file = File(dir, "mojrucek-pred-promena-${AccountFileTag.of(ownerKey)}-$stamp.json")
             if (file.exists()) return@withContext SnapshotResult.Failed("Копијата не можеше да се зачува. Обиди се повторно.")
             val tmp = File(dir, "${file.name}.tmp")
             FileOutputStream(tmp).use { out ->
@@ -80,6 +83,11 @@ class AccountSwitchRepository(
         } catch (e: Exception) {
             SnapshotResult.Failed("Копијата не можеше да се направи (${e.javaClass.simpleName}).")
         }
+    }
+
+    /** The switch worked: the copy now also belongs to [destinationUid], the account the person signed into. */
+    fun recordDestination(snapshot: VerifiedSnapshot, destinationUid: String?) {
+        if (destinationUid != null) index.attach(destinationUid, snapshot.file.name)
     }
 
     /** True when the snapshot file is still intact and the database still has exactly its content. */

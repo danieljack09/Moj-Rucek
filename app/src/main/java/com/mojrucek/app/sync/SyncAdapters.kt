@@ -21,8 +21,7 @@ class BackupSnapshotPort(private val backup: BackupRepository) : SnapshotPort {
 class FileSafetyCopy(private val context: Context, private val keep: Int = KEEP) : SafetyCopy {
 
     /** The file name carries a short hash of the account id, so one account's copies can be found (and deleted) without the id itself. */
-    private fun tag(uid: String): String =
-        java.security.MessageDigest.getInstance("SHA-256").digest(uid.toByteArray(Charsets.UTF_8)).take(6).joinToString("") { "%02x".format(it) }
+    private fun tag(uid: String): String = com.mojrucek.app.repository.AccountFileTag.of(uid)
 
     override fun save(uid: String, snapshotJson: String): Boolean = try {
         val dir = File(context.filesDir, DIR).apply { mkdirs() }

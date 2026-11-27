@@ -22,9 +22,11 @@ class AccountMemory(
     private val limits: LimitStateStore?,
     private val listRequests: PendingRequestStore?,
     private val syncState: com.mojrucek.app.sync.SyncStateStore?,
-    private val syncSafetyCopies: com.mojrucek.app.sync.SafetyCopy?
+    private val syncSafetyCopies: com.mojrucek.app.sync.SafetyCopy?,
+    private val files: com.mojrucek.app.repository.AccountFiles? = null
 ) {
     fun forget(uid: String) {
+        files?.deleteFor(uid)
         sessions.forget(uid)
         limits?.forget(uid)
         listRequests?.clear(uid)
@@ -44,7 +46,8 @@ class RealDeletionSteps(
     private val listRequests: PendingRequestStore? = null,
     private val password: String? = null,
     private val syncState: com.mojrucek.app.sync.SyncStateStore? = null,
-    private val syncSafetyCopies: com.mojrucek.app.sync.SafetyCopy? = null
+    private val syncSafetyCopies: com.mojrucek.app.sync.SafetyCopy? = null,
+    private val files: com.mojrucek.app.repository.AccountFiles? = null
 ) : DeletionSteps {
 
     override val currentUid: String? get() = auth.currentUid
@@ -79,6 +82,6 @@ class RealDeletionSteps(
 
     override suspend fun eraseLocal(uid: String) {
         eraser.eraseAccount(uid)
-        AccountMemory(sessions, limits, listRequests, syncState, syncSafetyCopies).forget(uid)
+        AccountMemory(sessions, limits, listRequests, syncState, syncSafetyCopies, files).forget(uid)
     }
 }

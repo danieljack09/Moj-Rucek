@@ -58,7 +58,9 @@ class AppContainer(context: Context) {
         database,
         currentOwner
     )
-    val accountSwitchRepository = AccountSwitchRepository(context.applicationContext, database, backupRepository, currentOwner)
+    private val switchCopyIndex = com.mojrucek.app.repository.SharedPreferencesSwitchCopyIndex(context)
+    val accountSwitchRepository = AccountSwitchRepository(context.applicationContext, database, backupRepository, currentOwner, switchCopyIndex)
+    private val accountFiles = com.mojrucek.app.repository.AccountFiles(context.filesDir, context.cacheDir, switchCopyIndex)
 
     /** Tells the server who is signed in and remembers its answer per account (the guest's 14 days start there). */
     private val sessionStore = SharedPreferencesSessionStore(context)
@@ -100,7 +102,7 @@ class AppContainer(context: Context) {
 
     /** Deleting the signed-in account. [activityContext] is the Activity (the Google picker needs it); null only for finishing an interrupted deletion. */
     fun accountDeletion(activityContext: Context?, password: String? = null) = com.mojrucek.app.session.AccountDeletion(
-        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests, password, syncStateStore, syncSafetyCopy),
+        com.mojrucek.app.session.RealDeletionSteps(authRepository, com.mojrucek.app.session.HttpAccountServer(), localDataEraser, sessionStore, activityContext, limitStateStore, pendingListRequests, password, syncStateStore, syncSafetyCopy, accountFiles),
         pendingErasure
     )
     val guestReminders = GuestReminderCoordinator(WorkManagerGuestReminders(context.applicationContext))

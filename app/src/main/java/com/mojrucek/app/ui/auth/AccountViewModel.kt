@@ -182,6 +182,8 @@ class AccountViewModel(
         return when (val r = authRepository.signInWithPendingCredential()) {
             is AuthResult.Success -> {
                 ownsConflict = false
+                // The guest's copy now also belongs to the account the person signed into (deleted together with it).
+                accountSwitchRepository.recordDestination(snapshot, authRepository.currentUid)
                 val cleared = try {
                     accountSwitchRepository.clearLocalUserData(snapshot)
                 } catch (e: Exception) {
