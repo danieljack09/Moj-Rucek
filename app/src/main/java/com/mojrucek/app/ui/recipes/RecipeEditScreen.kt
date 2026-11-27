@@ -1,41 +1,49 @@
 package com.mojrucek.app.ui.recipes
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.mojrucek.app.data.entity.RecipeCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
+import com.mojrucek.app.ui.components.CircleIconButton
+import com.mojrucek.app.ui.components.OutlinePillButton
+import com.mojrucek.app.ui.components.PillDropdownField
+import com.mojrucek.app.ui.components.PillTextField
+import com.mojrucek.app.ui.components.PrimaryPillButton
+import com.mojrucek.app.ui.components.ScreenHeader
+import com.mojrucek.app.ui.theme.MojRucekTheme
+import com.mojrucek.app.ui.theme.Spacing
+
+/** "Без категорија" first, then every category: the same options as before. */
+private val categoryOptions: List<RecipeCategory?> = listOf<RecipeCategory?>(null) + RecipeCategory.entries
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,200 +58,232 @@ fun RecipeEditScreen(
         state.savedRecipeId?.let { onSaved(it) }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (state.isNew) "Нов рецепт" else "Уреди рецепт") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Назад") }
-                }
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    // Error borders mirror RecipeEditUiState.isValid: servings must be a whole number above 0.
+    // (The name is not flagged: a new recipe starts with it empty.)
+    val servingsError = state.servingsText.toIntOrNull()?.let { it > 0 } != true
+
+    Scaffold { padding ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .consumeWindowInsets(padding)
+                // Keeps the focused field above the keyboard (the window is edge-to-edge).
+                .imePadding()
         ) {
-            item {
-                OutlinedTextField(
-                    value = state.name,
-                    onValueChange = viewModel::setName,
-                    label = { Text("Име на рецептот") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-            item {
-                OutlinedTextField(
-                    value = state.description,
-                    onValueChange = viewModel::setDescription,
-                    label = { Text("Опис (опционално)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = state.servingsText,
-                        onValueChange = viewModel::setServingsText,
-                        label = { Text("Порции") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = state.prepTimeText,
-                        onValueChange = viewModel::setPrepTimeText,
-                        label = { Text("Подготовка (мин)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = state.cookTimeText,
-                        onValueChange = viewModel::setCookTimeText,
-                        label = { Text("Готвење (мин)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
+            ScreenHeader(
+                title = if (state.isNew) "Нов рецепт" else "Уреди рецепт",
+                onBack = onBack,
+                modifier = Modifier.padding(horizontal = Spacing.screenHorizontal)
+            )
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(
+                    start = Spacing.screenHorizontal,
+                    top = 8.dp,
+                    end = Spacing.screenHorizontal,
+                    bottom = Spacing.betweenSections
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    PillTextField(
+                        value = state.name,
+                        onValueChange = viewModel::setName,
+                        label = "Име на рецептот"
                     )
                 }
-            }
-            item {
-                var expanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                    OutlinedTextField(
-                        value = state.category?.displayName ?: "Без категорија",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Категорија") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                item {
+                    PillTextField(
+                        value = state.description,
+                        onValueChange = viewModel::setDescription,
+                        label = "Опис (опционално)",
+                        singleLine = false,
+                        minLines = 2
                     )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text("Без категорија") },
-                            onClick = { viewModel.setCategory(null); expanded = false }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PillTextField(
+                            value = state.servingsText,
+                            onValueChange = viewModel::setServingsText,
+                            label = "Порции",
+                            isError = servingsError,
+                            modifier = Modifier.weight(1f)
                         )
-                        RecipeCategory.entries.forEach { c ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(c.displayName) },
-                                onClick = { viewModel.setCategory(c); expanded = false }
-                            )
-                        }
+                        PillDropdownField(
+                            label = "Категорија",
+                            selectedText = state.category?.displayName ?: "Без категорија",
+                            options = categoryOptions,
+                            optionLabel = { it?.displayName ?: "Без категорија" },
+                            isSelected = { it == state.category },
+                            onSelect = viewModel::setCategory,
+                            modifier = Modifier.weight(1.6f)
+                        )
                     }
                 }
-            }
-            item {
-                OutlinedTextField(
-                    value = state.tagsText,
-                    onValueChange = viewModel::setTagsText,
-                    label = { Text("Ознаки, одделени со запирка (опционално)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            item { Text("Намирници", style = MaterialTheme.typography.titleMedium) }
-            items(state.ingredients, key = { it.id }) { line ->
-                IngredientLineEditor(
-                    line = line,
-                    onChange = { updated -> viewModel.updateIngredientLine(line.id) { updated } },
-                    onRemove = { viewModel.removeIngredientLine(line.id) }
-                )
-            }
-            item {
-                OutlinedButton(onClick = viewModel::addIngredientLine, modifier = Modifier.fillMaxWidth()) {
-                    Text("+ Додади намирница")
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PillTextField(
+                            value = state.prepTimeText,
+                            onValueChange = viewModel::setPrepTimeText,
+                            label = "Подготовка (мин)",
+                            modifier = Modifier.weight(1f)
+                        )
+                        PillTextField(
+                            value = state.cookTimeText,
+                            onValueChange = viewModel::setCookTimeText,
+                            label = "Готвење (мин)",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
-            }
-
-            item { Text("Чекори на подготовка", style = MaterialTheme.typography.titleMedium) }
-            itemsIndexed(state.steps) { index, step ->
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = step,
-                        onValueChange = { viewModel.setStep(index, it) },
-                        label = { Text("Чекор ${index + 1}") },
-                        modifier = Modifier.weight(1f)
+                item {
+                    PillTextField(
+                        value = state.tagsText,
+                        onValueChange = viewModel::setTagsText,
+                        label = "Ознаки, одделени со запирка (опционално)"
                     )
-                    IconButton(onClick = { viewModel.removeStep(index) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Избриши чекор")
+                }
+
+                item { SectionTitle("Намирници") }
+                items(state.ingredients, key = { it.id }) { line ->
+                    IngredientLineEditor(
+                        line = line,
+                        onChange = { updated -> viewModel.updateIngredientLine(line.id) { updated } },
+                        onRemove = { viewModel.removeIngredientLine(line.id) }
+                    )
+                }
+                item {
+                    // Label kept exactly as before ("+ ..."), so no plus icon on top of it.
+                    OutlinePillButton(
+                        "+ Додади намирница",
+                        onClick = viewModel::addIngredientLine,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                item { SectionTitle("Чекори на подготовка") }
+                itemsIndexed(state.steps) { index, step ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PillTextField(
+                            value = step,
+                            onValueChange = { viewModel.setStep(index, it) },
+                            label = "Чекор ${index + 1}",
+                            singleLine = false,
+                            modifier = Modifier.weight(1f)
+                        )
+                        CircleIconButton(
+                            Icons.Outlined.DeleteOutline,
+                            contentDescription = "Избриши чекор",
+                            onClick = { viewModel.removeStep(index) }
+                        )
                     }
                 }
-            }
-            item {
-                OutlinedButton(onClick = viewModel::addStep, modifier = Modifier.fillMaxWidth()) {
-                    Text("+ Додади чекор")
+                item {
+                    OutlinePillButton(
+                        "+ Додади чекор",
+                        onClick = viewModel::addStep,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-            }
 
-            item {
-                OutlinedTextField(
-                    value = state.notes,
-                    onValueChange = viewModel::setNotes,
-                    label = { Text("Белешки (опционално)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+                item {
+                    Spacer(Modifier.height(Spacing.betweenSections - 12.dp))
+                    PillTextField(
+                        value = state.notes,
+                        onValueChange = viewModel::setNotes,
+                        label = "Белешки (опционално)",
+                        singleLine = false,
+                        minLines = 2
+                    )
+                }
 
-            item {
-                Button(
-                    onClick = viewModel::save,
-                    enabled = state.isValid,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Зачувај рецепт") }
+                item {
+                    Spacer(Modifier.height(Spacing.betweenSections - 12.dp))
+                    // Disabled (accentSoft) exactly when it was disabled before: while the form is invalid.
+                    PrimaryPillButton(
+                        "Зачувај рецепт",
+                        onClick = viewModel::save,
+                        enabled = state.isValid,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.padding(top = Spacing.betweenSections - 12.dp).semantics { heading() }
+    )
+}
+
+/**
+ * One ingredient as a greenContainer rounded block: name and a trailing remove button on the
+ * first line, quantity and unit side by side on the second. The fields use the background
+ * colour so they stand out from the block. A quantity that is not a number gets the error style
+ * (the same toDoubleOrNull check the form's validation uses).
+ */
 @Composable
 private fun IngredientLineEditor(
     line: IngredientLineInput,
     onChange: (IngredientLineInput) -> Unit,
     onRemove: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(8.dp)) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = line.name,
-                    onValueChange = { onChange(line.copy(name = it)) },
-                    label = { Text("Намирница") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onRemove) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Избриши намирница")
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = line.quantityText,
-                    onValueChange = { onChange(line.copy(quantityText = it)) },
-                    label = { Text("Количина") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                var expanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1f)) {
-                    OutlinedTextField(
-                        value = line.unit.displayName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Единица") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
-                    )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        MeasurementUnit.entries.forEach { u ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { Text(u.displayName) },
-                                onClick = { onChange(line.copy(unit = u)); expanded = false }
-                            )
-                        }
-                    }
-                }
-            }
+    val fieldColor = MaterialTheme.colorScheme.background
+    val quantityError = line.quantityText.isNotBlank() && line.quantityText.toDoubleOrNull() == null
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(MojRucekTheme.colors.greenContainer)
+            .padding(start = Spacing.rowPadding, top = Spacing.rowPadding, end = 4.dp, bottom = Spacing.rowPadding),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PillTextField(
+                value = line.name,
+                onValueChange = { onChange(line.copy(name = it)) },
+                label = "Намирница",
+                containerColor = fieldColor,
+                modifier = Modifier.weight(1f)
+            )
+            CircleIconButton(
+                Icons.Outlined.DeleteOutline,
+                contentDescription = "Избриши намирница",
+                onClick = onRemove,
+                containerColor = fieldColor
+            )
+        }
+        // Full width (not stopping short of the remove button) so "Количина" fits on narrow screens.
+        Row(
+            modifier = Modifier.padding(end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PillTextField(
+                value = line.quantityText,
+                onValueChange = { onChange(line.copy(quantityText = it)) },
+                label = "Количина",
+                isError = quantityError,
+                containerColor = fieldColor,
+                modifier = Modifier.weight(1f)
+            )
+            PillDropdownField(
+                label = "Единица",
+                selectedText = line.unit.displayName,
+                options = MeasurementUnit.entries,
+                optionLabel = { it.displayName },
+                isSelected = { it == line.unit },
+                onSelect = { onChange(line.copy(unit = it)) },
+                containerColor = fieldColor,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }

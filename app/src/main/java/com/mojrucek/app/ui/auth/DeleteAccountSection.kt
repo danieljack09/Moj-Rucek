@@ -1,20 +1,26 @@
 package com.mojrucek.app.ui.auth
 
+import com.mojrucek.app.ui.components.AppProgressIndicator
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,7 +30,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.ViewModel
@@ -34,10 +42,16 @@ import com.mojrucek.app.auth.AccountKind
 import com.mojrucek.app.di.AppContainer
 import com.mojrucek.app.repository.SaveOutcome
 import com.mojrucek.app.session.DeletionOutcome
+import com.mojrucek.app.ui.components.AppDialog
 import com.mojrucek.app.ui.components.GenericViewModelFactory
+import com.mojrucek.app.ui.components.OutlinePillButton
+import com.mojrucek.app.ui.components.PillTextField
 import com.mojrucek.app.ui.components.backupSaverFor
 import com.mojrucek.app.ui.components.savedBackupMessage
 import com.mojrucek.app.ui.components.suggestedBackupFileName
+import com.mojrucek.app.ui.theme.MojRucekTheme
+import com.mojrucek.app.ui.theme.PillShape
+import com.mojrucek.app.ui.theme.Spacing
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -100,61 +114,77 @@ fun DeleteAccountSection(container: AppContainer) {
         }
     }
 
-    TextButton(onClick = vm::open, modifier = Modifier.fillMaxWidth()) {
-        Text("Избриши сметка", color = MaterialTheme.colorScheme.error)
+    // A row in the error colour, in the same pill-row language as the rest of Settings.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(PillShape)
+            .background(MojRucekTheme.colors.greenContainer)
+            .clickable(role = Role.Button, onClick = vm::open)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(Spacing.rowPadding))
+        Text("Избриши сметка", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
     }
 
     when (val s = stage) {
         DeleteStage.Idle -> Unit
-        DeleteStage.Confirm -> AlertDialog(
-            onDismissRequest = vm::close,
-            title = { Text("Избриши сметка") },
-            text = {
+        DeleteStage.Confirm -> {
+            // Same gate as before: understood, and for an email account a non-empty password.
+            val ready = understood && (!needsPassword || password.isNotEmpty())
+            AppDialog(
+                onDismissRequest = vm::close,
+                title = "Избриши сметка",
+                text = "Ќе се избришат сметката и сите нејзини податоци на овој телефон " +
+                    "(намирници, твоите рецепти, планови, листа за пазарење, омилени), " +
+                    "како и записот на нашиот сервер.\n\nОва не може да се врати.",
+                confirmLabel = "Избриши",
+                onConfirm = { vm.confirm(context, password.takeIf { needsPassword }) },
+                confirmEnabled = ready,
+                dismissLabel = "Откажи",
+                onDismiss = vm::close
+            ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Ќе се избришат сметката и сите нејзини податоци на овој телефон " +
-                            "(намирници, твоите рецепти, планови, листа за пазарење, омилени), " +
-                            "како и записот на нашиот сервер.\n\nОва не може да се врати."
-                    )
-                    OutlinedButton(
+                    OutlinePillButton(
+                        "Зачувај копија прво",
                         onClick = { saveLauncher.launch(suggestedBackupFileName()) },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Зачувај копија прво") }
+                    )
                     copyMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     if (needsPassword) {
-                        androidx.compose.material3.OutlinedTextField(
-                            value = password, onValueChange = { password = it },
-                            label = { Text("Лозинка (за потврда)") }, singleLine = true,
-                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth()
+                        PillTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = "Лозинка (за потврда)",
+                            masked = true
                         )
                     }
-                    Row(Modifier.fillMaxWidth().clickable { understood = !understood }, verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = understood, onCheckedChange = { understood = it })
-                        Text("Разбирам дека не може да се врати")
-                    }
+                    UnderstoodRow(
+                        text = "Разбирам дека не може да се врати",
+                        checked = understood,
+                        onCheckedChange = { understood = it }
+                    )
                 }
-            },
-            confirmButton = {
-                val ready = understood && (!needsPassword || password.isNotEmpty())
-                TextButton(onClick = { vm.confirm(context, password.takeIf { needsPassword }) }, enabled = ready) {
-                    Text("Избриши", color = if (ready) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
-                }
-            },
-            dismissButton = { TextButton(onClick = vm::close) { Text("Откажи") } }
-        )
-        DeleteStage.Working -> AlertDialog(
+            }
+        }
+        DeleteStage.Working -> AppDialog(
             onDismissRequest = {},
             properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-            title = { Text("Се брише…") },
-            text = { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator() } },
-            confirmButton = {}
-        )
-        is DeleteStage.Problem -> AlertDialog(
+            title = "Се брише…",
+            confirmLabel = null,
+            onConfirm = null
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { AppProgressIndicator() }
+        }
+        is DeleteStage.Problem -> AppDialog(
             onDismissRequest = vm::close,
-            title = { Text("Не успеа") },
-            text = { Text(s.message) },
-            confirmButton = { TextButton(onClick = vm::close) { Text("Во ред") } }
+            title = "Не успеа",
+            text = s.message,
+            confirmLabel = "Во ред",
+            onConfirm = vm::close
         )
     }
 }

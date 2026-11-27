@@ -1,5 +1,7 @@
 package com.mojrucek.app.ui.auth
 
+import com.mojrucek.app.ui.components.OutlinePillButton
+import com.mojrucek.app.ui.components.AppDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -64,22 +66,21 @@ fun LegacyDataPrompt(container: AppContainer) {
 /** The dialog alone, without any app logic, so it can be tested on its own. */
 @Composable
 fun LegacyDataPromptDialog(message: String?, onKeep: () -> Unit, onLater: () -> Unit, onSaveCopy: () -> Unit) {
-    AlertDialog(
+    AppDialog(
         onDismissRequest = onLater,
-        title = { Text("Податоци од пред сметките") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "На овој телефон има податоци создадени пред да постојат сметките " +
-                        "(намирници, рецепти, листа за пазарење). Дали да ги задржиш во оваа сметка?\n\n" +
-                        "Ако избереш „Подоцна“, податоците остануваат на телефонот, но не се прикажуваат " +
-                        "додека не одлучиш. Ништо не се брише."
-                )
-                OutlinedButton(onClick = onSaveCopy, modifier = Modifier.fillMaxWidth()) { Text("Зачувај копија прво") }
-                message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            }
-        },
-        confirmButton = { TextButton(onClick = onKeep) { Text("Задржи во оваа сметка") } },
-        dismissButton = { TextButton(onClick = onLater) { Text("Подоцна") } }
-    )
+        title = "Податоци од пред сметките",
+        text = "На овој телефон има податоци создадени пред да постојат сметките " +
+            "(намирници, рецепти, листа за пазарење). Дали да ги задржиш во оваа сметка?\n\n" +
+            "Ако избереш „Подоцна“, податоците остануваат на телефонот, но не се прикажуваат " +
+            "додека не одлучиш. Ништо не се брише.",
+        confirmLabel = "Задржи во оваа сметка",
+        onConfirm = onKeep,
+        dismissLabel = "Подоцна",
+        onDismiss = onLater
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinePillButton("Зачувај копија прво", onClick = onSaveCopy, modifier = Modifier.fillMaxWidth())
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
 }

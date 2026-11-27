@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher mark cropped to its artwork (64x64 around the centre of the 108 canvas), for
+     AppMark in the UI. Same paths as ic_launcher_foreground. Tinted at use. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <group android:translateX="-22" android:translateY="-22">
+    <!-- Hat crown: one soft three-lobed outline -->
+    <path
+        android:pathData="M35,62 C28,60.5 25,53 28.5,47 C31.5,42 36.5,40.5 40.5,42 C40.5,33.5 47,28 54,28 C61,28 67.5,33.5 67.5,42 C71.5,40.5 76.5,42 79.5,47 C83,53 80,60.5 73,62"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Band, with one seam line -->
+    <path
+        android:pathData="M35,58 L35,77 L73,77 L73,58 M35,69.5 L73,69.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Flame inside the crown -->
+    <path
+        android:pathData="M54,60 C49.5,60 46.5,57 46.5,53 C46.5,49.5 49,47 51,43 C52.3,45.8 53.8,46.8 55.2,47.6 C56.2,45.8 56.4,43.6 55.6,41.5 C59.6,44.5 61.5,48.5 61.5,53 C61.5,57 58.5,60 54,60 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    </group>
+</vector>

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.mojrucek.app.domain.text.MkPlural
 
 data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
@@ -139,7 +140,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             when (val result = backupRepository.import(jsonText)) {
                 is ImportResult.Success -> importMessage.value =
-                    "Вчитани се ${result.summary.recipeCount} рецепти, ${result.summary.ingredientCount} намирници."
+                    "Вчитани се ${MkPlural.recipes(result.summary.recipeCount)}, ${MkPlural.ingredients(result.summary.ingredientCount)}."
                 is ImportResult.InvalidFile -> importMessage.value = result.reason
             }
         }
@@ -152,7 +153,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             isSyncing.value = true
             syncMessage.value = when (val result = catalogSyncRepository.sync()) {
-                is SyncResult.Success -> "Синхронизирано: ${result.ingredients} намирници, ${result.recipes} рецепти ажурирани."
+                is SyncResult.Success -> "Синхронизирано: ${MkPlural.ingredients(result.ingredients)}, ${MkPlural.recipes(result.recipes)} ажурирани."
                 is SyncResult.Failure -> "Синхронизацијата не успеа (${result.reason}). Провери интернет врска."
             }
             isSyncing.value = false

@@ -1,10 +1,12 @@
 package com.mojrucek.app.domain.session
 
+import com.mojrucek.app.domain.text.MkPlural
+
 /** The words the user sees about the guest period (Macedonian), kept apart from the screens so they can be tested. */
 object GuestTexts {
 
-    /** "1 ден", "5 дена". (11-14 are plain "дена" in Macedonian too, because only 1 itself uses "ден".) */
-    fun days(n: Int): String = if (n == 1) "1 ден" else "$n дена"
+    /** "1 ден", "21 ден", "5 дена", "11 дена": see [MkPlural]. */
+    fun days(n: Int): String = MkPlural.days(n)
 
     /** The line under "Сметка" in Settings for a guest. */
     fun settingsLine(status: GuestPeriod.Status): String = when (status) {

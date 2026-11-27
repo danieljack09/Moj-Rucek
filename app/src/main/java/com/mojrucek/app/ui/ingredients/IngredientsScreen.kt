@@ -1,40 +1,52 @@
 package com.mojrucek.app.ui.ingredients
 
+import com.mojrucek.app.domain.unit.UnitConverter
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import com.mojrucek.app.ui.components.AppFab
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.Kitchen
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Numbers
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,26 +56,47 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Event
-import androidx.compose.runtime.LaunchedEffect
-import com.mojrucek.app.domain.usecase.IngredientSuggestion
-import com.mojrucek.app.domain.usecase.IngredientSuggestions
-import com.mojrucek.app.domain.usecase.WeekCalculator
-import androidx.compose.foundation.clickable
-import androidx.compose.material3.Surface
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import com.mojrucek.app.data.entity.Ingredient
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
+import com.mojrucek.app.domain.usecase.IngredientSuggestion
+import com.mojrucek.app.domain.usecase.IngredientSuggestions
+import com.mojrucek.app.domain.usecase.WeekCalculator
+import com.mojrucek.app.ui.components.AppBottomSheet
+import com.mojrucek.app.ui.components.AppChip
+import com.mojrucek.app.ui.components.AppDialog
+import com.mojrucek.app.ui.components.AppDropdownMenu
+import com.mojrucek.app.ui.components.AppDropdownMenuItem
+import com.mojrucek.app.ui.components.AppMenuShape
 import com.mojrucek.app.ui.components.CategoryChipsRow
-import com.mojrucek.app.ui.components.CategoryEmojiBadge
+import com.mojrucek.app.ui.components.CategoryIconCircle
+import com.mojrucek.app.ui.components.ChipRow
+import com.mojrucek.app.ui.components.ChipSelectionStyle
+import com.mojrucek.app.ui.components.CircleIconButton
 import com.mojrucek.app.ui.components.EmptyState
+import com.mojrucek.app.ui.components.MetaPill
+import com.mojrucek.app.ui.components.PillDropdownField
+import com.mojrucek.app.ui.components.PillListRow
+import com.mojrucek.app.ui.components.PillSearchField
+import com.mojrucek.app.ui.components.PillTextButton
+import com.mojrucek.app.ui.components.PillTextField
+import com.mojrucek.app.ui.components.ScreenHeader
+import com.mojrucek.app.ui.components.appMenuBorder
 import com.mojrucek.app.ui.components.formatQuantityWithUnit
+import com.mojrucek.app.ui.components.icon
+import com.mojrucek.app.ui.components.tabListBottomPadding
+import com.mojrucek.app.ui.theme.MojRucekTheme
+import com.mojrucek.app.ui.theme.PillShape
+import com.mojrucek.app.ui.theme.Spacing
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import com.mojrucek.app.domain.text.MkPlural
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,87 +109,103 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
 
+    // No top bar: the Scaffold's top padding is the status-bar inset, and ScreenHeader sits below it.
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Намирници") },
-                actions = {
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Filled.Sort, contentDescription = "Подреди")
-                    }
-                    DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Име") },
-                            onClick = { viewModel.setSort(IngredientSort.NAME); showSortMenu = false }
+        floatingActionButton = {
+            AppFab(onClick = { showAddDialog = true }, contentDescription = "Додади намирница")
+        }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+            ScreenHeader(
+                title = "Намирници",
+                modifier = Modifier.padding(horizontal = Spacing.screenHorizontal)
+            ) {
+                Box {
+                    CircleIconButton(
+                        Icons.AutoMirrored.Outlined.Sort,
+                        contentDescription = "Подреди",
+                        onClick = { showSortMenu = true }
+                    )
+                    AppDropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                        AppDropdownMenuItem(
+                            "Име",
+                            onClick = { viewModel.setSort(IngredientSort.NAME); showSortMenu = false },
+                            leadingIcon = Icons.Outlined.SortByAlpha,
+                            selected = state.sort == IngredientSort.NAME
                         )
-                        DropdownMenuItem(
-                            text = { Text("Категорија") },
-                            onClick = { viewModel.setSort(IngredientSort.CATEGORY); showSortMenu = false }
+                        AppDropdownMenuItem(
+                            "Категорија",
+                            onClick = { viewModel.setSort(IngredientSort.CATEGORY); showSortMenu = false },
+                            leadingIcon = Icons.Outlined.Category,
+                            selected = state.sort == IngredientSort.CATEGORY
                         )
-                        DropdownMenuItem(
-                            text = { Text("Количина") },
-                            onClick = { viewModel.setSort(IngredientSort.QUANTITY); showSortMenu = false }
+                        AppDropdownMenuItem(
+                            "Количина",
+                            onClick = { viewModel.setSort(IngredientSort.QUANTITY); showSortMenu = false },
+                            leadingIcon = Icons.Outlined.Numbers,
+                            selected = state.sort == IngredientSort.QUANTITY
                         )
-                        DropdownMenuItem(
-                            text = { Text("Рок на траење") },
-                            onClick = { viewModel.setSort(IngredientSort.EXPIRATION); showSortMenu = false }
+                        AppDropdownMenuItem(
+                            "Рок на траење",
+                            onClick = { viewModel.setSort(IngredientSort.EXPIRATION); showSortMenu = false },
+                            leadingIcon = Icons.Outlined.Event,
+                            selected = state.sort == IngredientSort.EXPIRATION
                         )
                     }
                 }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "Додади намирница")
             }
-        }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+
+            PillSearchField(
+                value = state.searchQuery,
+                onValueChange = viewModel::setSearchQuery,
+                placeholder = "Пребарај",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.screenHorizontal, vertical = 8.dp)
+            )
+
+            // Category is a single choice (filled); the two filters below are independent toggles (outlined).
             CategoryChipsRow(
                 categories = IngredientCategory.entries,
                 selected = state.categoryFilter,
                 onSelect = viewModel::setCategoryFilter,
                 counts = state.categoryCounts,
                 totalCount = state.allIngredients.size,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                contentPadding = PaddingValues(horizontal = Spacing.screenHorizontal)
             )
-
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = viewModel::setSearchQuery,
-                label = { Text("Пребарај") },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                singleLine = true
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
+            ChipRow {
+                AppChip(
+                    "При крај",
                     selected = state.lowStockOnly,
                     onClick = { viewModel.setLowStockOnly(!state.lowStockOnly) },
-                    label = { Text("При крај") }
+                    selectedStyle = ChipSelectionStyle.Outlined
                 )
-                FilterChip(
+                AppChip(
+                    "Истекува наскоро",
                     selected = state.expiringOnly,
                     onClick = { viewModel.setExpiringOnly(!state.expiringOnly) },
-                    label = { Text("Истекува наскоро") }
+                    selectedStyle = ChipSelectionStyle.Outlined
                 )
             }
 
             if (state.visibleIngredients.isEmpty()) {
                 EmptyState(
-                    message = if (state.allIngredients.isEmpty())
+                    icon = Icons.Outlined.Kitchen,
+                    title = if (state.allIngredients.isEmpty())
                         "Нема намирници. Додади ја првата од копчето +."
                     else "Нема намирници што одговараат на филтерот.",
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(bottom = tabListBottomPadding(padding))
                 )
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    contentPadding = PaddingValues(
+                        start = Spacing.screenHorizontal, top = 8.dp, end = Spacing.screenHorizontal,
+                        bottom = tabListBottomPadding(padding, withFab = true)
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(state.visibleIngredients, key = { it.id }) { ingredient ->
                         IngredientRow(
@@ -210,21 +259,15 @@ fun IngredientsScreen(viewModel: IngredientsViewModel) {
     }
 
     pendingDuplicate?.let { pending ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = viewModel::dismissDuplicateDialog,
-            title = { Text("Намирницата веќе постои") },
-            text = {
-                Text(
-                    "„${pending.existing.name}“ веќе ја имаш дома (${formatQuantityWithUnit(pending.existing.quantity, pending.existing.unit)}). " +
-                        "Да ја зголемам количината наместо да креирам нова ставка?"
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = viewModel::confirmMergeDuplicate) { Text("Ажурирај количина") }
-            },
-            dismissButton = {
-                TextButton(onClick = viewModel::confirmAddAsSeparateEntry) { Text("Додади посебно") }
-            }
+            title = "Намирницата веќе постои",
+            text = "„${pending.existing.name}“ веќе ја имаш дома (${formatQuantityWithUnit(pending.existing.quantity, pending.existing.unit)}). " +
+                "Да ја зголемам количината наместо да креирам нова ставка?",
+            confirmLabel = "Ажурирај количина",
+            onConfirm = viewModel::confirmMergeDuplicate,
+            dismissLabel = "Додади посебно",
+            onDismiss = viewModel::confirmAddAsSeparateEntry
         )
     }
 }
@@ -235,6 +278,15 @@ private fun stepFor(unit: MeasurementUnit): Double = when (unit.group) {
     com.mojrucek.app.domain.unit.UnitGroup.COUNT -> 1.0
 }
 
+/**
+ * A greenContainer row (20dp corners): category icon circle (with a small accent dot when the item is
+ * low on stock), then the name (titleMedium, up to 2 lines) and the category (one line); the expiry pill
+ * gets its own full-width line below.
+ * On the right the quantity is the most visible thing: number in titleMedium, unit in bodyMedium, accent
+ * when low on stock, centred above the minus/plus stepper; then the overflow menu. Only the name column
+ * flexes, so on narrow screens or with large text the name wraps and the quantity is never squeezed.
+ * Tapping the row opens the edit sheet.
+ */
 @Composable
 private fun IngredientRow(
     ingredient: Ingredient,
@@ -244,50 +296,154 @@ private fun IngredientRow(
     onClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    Card(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                CategoryEmojiBadge(category = ingredient.category)
-                Column(modifier = Modifier.padding(start = 12.dp)) {
-                    Text(ingredient.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "${ingredient.category.displayName} · ${formatQuantityWithUnit(ingredient.quantity, ingredient.unit)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (ingredient.isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    expirationLabel(ingredient.expirationDateEpochDay)?.let { label ->
-                        val urgent = ingredient.expirationDateEpochDay!! - WeekCalculator.today().toEpochDay() <= EXPIRING_SOON_DAYS
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-            IconButton(onClick = onDecrease) { Icon(Icons.Filled.Remove, contentDescription = "Намали") }
-            IconButton(onClick = onIncrease) { Icon(Icons.Filled.Add, contentDescription = "Зголеми") }
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Повеќе опции")
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Уреди") },
-                        onClick = { showMenu = false; onClick() }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Избриши") },
-                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                        onClick = { showMenu = false; onDelete() }
-                    )
-                }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(MojRucekTheme.colors.greenContainer)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(start = 8.dp, top = 10.dp, end = 4.dp, bottom = 10.dp)
+    ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            CategoryIconCircle(ingredient.category.icon())
+            if (ingredient.isLowStock) {
+                // Low stock: a small accent dot, read out with the "При крај" filter's label.
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(MojRucekTheme.colors.greenContainer)
+                        .padding(2.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .semantics { contentDescription = "При крај" }
+                )
             }
         }
+        Spacer(Modifier.width(Spacing.rowPadding))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                ingredient.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                ingredient.category.displayName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            QuantityText(ingredient)
+            // Compact stepper: two circles on a background-coloured pill.
+            Row(
+                Modifier.clip(PillShape).background(MaterialTheme.colorScheme.background),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircleIconButton(
+                    Icons.Outlined.Remove,
+                    contentDescription = "Намали",
+                    onClick = onDecrease,
+                    containerColor = Color.Transparent,
+                    circleSize = 32.dp
+                )
+                CircleIconButton(
+                    Icons.Outlined.Add,
+                    contentDescription = "Зголеми",
+                    onClick = onIncrease,
+                    containerColor = Color.Transparent,
+                    circleSize = 32.dp
+                )
+            }
+        }
+        Box {
+            CircleIconButton(
+                Icons.Outlined.MoreVert,
+                contentDescription = "Повеќе опции",
+                onClick = { showMenu = true },
+                containerColor = Color.Transparent
+            )
+            AppDropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                AppDropdownMenuItem(
+                    "Уреди",
+                    onClick = { showMenu = false; onClick() },
+                    leadingIcon = Icons.Outlined.Edit
+                )
+                AppDropdownMenuItem(
+                    "Избриши",
+                    onClick = { showMenu = false; onDelete() },
+                    leadingIcon = Icons.Outlined.DeleteOutline
+                )
+            }
+        }
+    }
+    // Expiry on its own line under the name and category, using the full width to the right edge so it
+    // never shares space with the stepper. Indented to line up with the name (40dp icon + 12dp gap).
+    // The label may wrap inside the pill but is never cut off: it is the important part.
+    expirationLabel(ingredient.expirationDateEpochDay)?.let { label ->
+        val urgent = ingredient.expirationDateEpochDay!! - WeekCalculator.today().toEpochDay() <= EXPIRING_SOON_DAYS
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth().padding(start = 40.dp + Spacing.rowPadding, end = 8.dp)) {
+            ExpiryPill(label, urgent)
+        }
+    }
+    }
+}
+
+/**
+ * "2 пакувања": the number in titleMedium and the unit in bodyMedium, accent when low on stock. Built from
+ * the same two parts as formatQuantityWithUnit (UnitConverter.formatQuantity + MkPlural.unitLabel), so the
+ * text and plurals are identical. One line, never wrapped: the row gives the space to the name instead.
+ */
+@Composable
+private fun QuantityText(ingredient: Ingredient) {
+    val color = if (ingredient.isLowStock) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val number = UnitConverter.formatQuantity(ingredient.quantity)
+    val unit = MkPlural.unitLabel(ingredient.quantity, ingredient.unit)
+    val numberStyle = MaterialTheme.typography.titleMedium.toSpanStyle()
+    val unitStyle = MaterialTheme.typography.bodyMedium.toSpanStyle()
+    Text(
+        buildAnnotatedString {
+            withStyle(numberStyle) { append(number) }
+            append(" ")
+            withStyle(unitStyle) { append(unit) }
+        },
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.padding(horizontal = 4.dp)
+    )
+}
+
+/** Expiry as a MetaPill: accentSoft for expired or within 3 days, green when it is still fine. */
+@Composable
+private fun ExpiryPill(label: String, urgent: Boolean) {
+    if (urgent) {
+        MetaPill(
+            Icons.Outlined.Event,
+            label,
+            containerColor = MojRucekTheme.colors.accentSoft,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            iconTint = MaterialTheme.colorScheme.onSurface,
+            maxLines = Int.MAX_VALUE
+        )
+    } else {
+        MetaPill(
+            Icons.Outlined.Event,
+            label,
+            containerColor = MojRucekTheme.colors.green,
+            contentColor = MaterialTheme.colorScheme.onSecondary,
+            iconTint = MaterialTheme.colorScheme.onSecondary,
+            maxLines = Int.MAX_VALUE
+        )
     }
 }
 
@@ -307,7 +463,6 @@ private fun IngredientFormDialog(
     var lowStockText by remember { mutableStateOf(initial?.lowStockThreshold?.toString() ?: "") }
     var notes by remember { mutableStateOf(initial?.notes ?: "") }
     var expirationEpochDay by remember { mutableStateOf(initial?.expirationDateEpochDay) }
-    var unitMenuExpanded by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     // Hidden right after a pick so the list doesn't reappear for the chosen name.
     var suggestionsEnabled by remember { mutableStateOf(initial == null) }
@@ -317,18 +472,38 @@ private fun IngredientFormDialog(
 
     val quantity = quantityText.toDoubleOrNull()
     val isValid = name.isNotBlank() && quantity != null && quantity >= 0.0
+    // Error border only for a quantity that has text but fails the same check.
+    val quantityError = quantityText.isNotBlank() && (quantity == null || quantity < 0.0)
 
-    AlertDialog(
+    // The reference's "Edit" sheet: title with a close circle ("Откажи": the old dismiss button;
+    // swipe-down and outside tap also dismiss), the fields, and a full-width save button that is
+    // disabled exactly when the old "Зачувај" was.
+    AppBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Нова намирница" else "Уреди намирница") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+        title = if (initial == null) "Нова намирница" else "Уреди намирница",
+        closeContentDescription = "Откажи",
+        primaryActionLabel = "Зачувај",
+        primaryActionEnabled = isValid,
+        onPrimaryAction = {
+            onSubmit(
+                NewIngredientInput(
+                    name = name.trim(),
+                    category = category,
+                    quantity = quantity ?: 0.0,
+                    unit = unit,
+                    expirationDateEpochDay = expirationEpochDay,
+                    lowStockThreshold = lowStockText.toDoubleOrNull(),
+                    notes = notes.ifBlank { null }
+                )
+            )
+        }
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PillTextField(
                     value = name,
                     onValueChange = { name = it; suggestionsEnabled = true },
-                    label = { Text("Име") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    label = "Име"
                 )
                 if (suggestions.isNotEmpty()) {
                     SuggestionList(
@@ -343,9 +518,12 @@ private fun IngredientFormDialog(
                         }
                     )
                 }
-                Text("Категорија", style = MaterialTheme.typography.labelLarge)
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Категорија", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CategoryEmojiBadge(category = category, size = 32.dp)
+                    CategoryIconCircle(category.icon(), size = 32.dp)
                     Text(
                         category.displayName,
                         style = MaterialTheme.typography.bodyLarge,
@@ -358,160 +536,178 @@ private fun IngredientFormDialog(
                     onSelect = { category = it ?: IngredientCategory.DRUGO },
                     showAllOption = false
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = quantityText,
-                        onValueChange = { quantityText = it },
-                        label = { Text("Количина") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ExposedDropdownMenuBox(
-                        expanded = unitMenuExpanded,
-                        onExpandedChange = { unitMenuExpanded = it },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = unit.displayName,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Единица") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenuExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor()
-                        )
-                        ExposedDropdownMenu(expanded = unitMenuExpanded, onDismissRequest = { unitMenuExpanded = false }) {
-                            MeasurementUnit.entries.forEach { u ->
-                                DropdownMenuItem(
-                                    text = { Text(u.displayName) },
-                                    onClick = { unit = u; unitMenuExpanded = false }
-                                )
-                            }
-                        }
-                    }
-                }
-                ExpirationDateField(
-                    epochDay = expirationEpochDay,
-                    onPick = { showDatePicker = true },
-                    onClear = { expirationEpochDay = null }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PillTextField(
+                    value = quantityText,
+                    onValueChange = { quantityText = it },
+                    label = "Количина",
+                    isError = quantityError,
+                    modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
-                    value = lowStockText,
-                    onValueChange = { lowStockText = it },
-                    label = { Text("Праг за „при крај“ (опционално)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Белешки (опционално)") },
-                    modifier = Modifier.fillMaxWidth()
+                PillDropdownField(
+                    label = "Единица",
+                    selectedText = unit.displayName,
+                    options = MeasurementUnit.entries,
+                    optionLabel = { it.displayName },
+                    isSelected = { it == unit },
+                    onSelect = { unit = it },
+                    modifier = Modifier.weight(1f)
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = isValid,
-                onClick = {
-                    onSubmit(
-                        NewIngredientInput(
-                            name = name.trim(),
-                            category = category,
-                            quantity = quantity ?: 0.0,
-                            unit = unit,
-                            expirationDateEpochDay = expirationEpochDay,
-                            lowStockThreshold = lowStockText.toDoubleOrNull(),
-                            notes = notes.ifBlank { null }
-                        )
-                    )
-                }
-            ) { Text("Зачувај") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Откажи") }
+            ExpirationDateField(
+                epochDay = expirationEpochDay,
+                onPick = { showDatePicker = true },
+                onClear = { expirationEpochDay = null }
+            )
+            PillTextField(
+                value = lowStockText,
+                onValueChange = { lowStockText = it },
+                label = "Праг за „при крај“ (опционално)"
+            )
+            PillTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = "Белешки (опционално)",
+                singleLine = false,
+                minLines = 2
+            )
         }
-    )
+    }
 
     if (showDatePicker) {
         val pickerState = rememberDatePickerState(
             initialSelectedDateMillis = (expirationEpochDay ?: WeekCalculator.today().toEpochDay()) * MILLIS_PER_DAY
         )
+        val pickerColors = appDatePickerColors()
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
-                TextButton(onClick = {
+                PillTextButton("Во ред", onClick = {
                     pickerState.selectedDateMillis?.let { expirationEpochDay = it / MILLIS_PER_DAY }
                     showDatePicker = false
-                }) { Text("Во ред") }
+                })
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Откажи") }
-            }
+                PillTextButton("Откажи", onClick = { showDatePicker = false })
+            },
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 0.dp,
+            colors = pickerColors
         ) {
-            DatePicker(state = pickerState)
+            DatePicker(state = pickerState, colors = pickerColors)
         }
     }
 }
 
+/** DatePicker colours from the app palette: background surface, accent selection, darkOlive text. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun appDatePickerColors() = DatePickerDefaults.colors(
+    containerColor = MaterialTheme.colorScheme.background,
+    titleContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    headlineContentColor = MaterialTheme.colorScheme.onSurface,
+    weekdayContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    navigationContentColor = MojRucekTheme.colors.darkOlive,
+    yearContentColor = MaterialTheme.colorScheme.onSurface,
+    currentYearContentColor = MaterialTheme.colorScheme.primary,
+    selectedYearContainerColor = MaterialTheme.colorScheme.primary,
+    selectedYearContentColor = MaterialTheme.colorScheme.onPrimary,
+    dayContentColor = MaterialTheme.colorScheme.onSurface,
+    selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+    selectedDayContentColor = MaterialTheme.colorScheme.onPrimary,
+    todayContentColor = MaterialTheme.colorScheme.primary,
+    todayDateBorderColor = MaterialTheme.colorScheme.primary,
+    dividerColor = MaterialTheme.colorScheme.outlineVariant
+)
+
 private const val MILLIS_PER_DAY = 86_400_000L
 
+/**
+ * Up to five name suggestions in a rounded background-colour panel (menu style) under the name
+ * field; each is a PillListRow with the category's line icon. Picking one fills the form.
+ */
 @Composable
 private fun SuggestionList(
     suggestions: List<IngredientSuggestion>,
     source: List<IngredientSuggestion>,
     onPick: (IngredientSuggestion) -> Unit
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(AppMenuShape)
+            .background(MaterialTheme.colorScheme.background)
+            .border(appMenuBorder(), AppMenuShape)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column {
-            suggestions.forEach { suggestion ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(suggestion) }
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        (suggestion.category ?: IngredientSuggestions.lookup(suggestion.name, source)?.category)?.emoji ?: "🛒",
-                        modifier = Modifier.padding(end = 10.dp)
+        suggestions.forEach { suggestion ->
+            val category = suggestion.category ?: IngredientSuggestions.lookup(suggestion.name, source)?.category
+            PillListRow(
+                title = suggestion.name,
+                onClick = { onPick(suggestion) },
+                titleMaxLines = 1,
+                leading = {
+                    CategoryIconCircle(
+                        (category ?: IngredientCategory.DRUGO).icon(),
+                        size = 32.dp,
+                        modifier = Modifier.padding(start = 6.dp)
                     )
-                    Text(suggestion.name, style = MaterialTheme.typography.bodyLarge)
                 }
-            }
+            )
         }
     }
 }
 
 private val expirationFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy")
 
-/** Read-only field that opens a date picker on tap; the trailing icon clears the date. */
+/**
+ * Read-only pill styled like a PillTextField: the label as a small top line, the date (or the
+ * "Избери датум" placeholder) below. Tapping opens the date picker; when a date is set a
+ * trailing circle clears it, otherwise a calendar icon shows.
+ */
 @Composable
 private fun ExpirationDateField(epochDay: Long?, onPick: () -> Unit, onClear: () -> Unit) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    LaunchedEffect(pressed) { if (pressed) onPick() }
-    OutlinedTextField(
-        value = epochDay?.let { LocalDate.ofEpochDay(it).format(expirationFormatter) } ?: "",
-        onValueChange = {},
-        readOnly = true,
-        label = { Text("Рок на траење (опционално)") },
-        placeholder = { Text("Избери датум") },
-        trailingIcon = {
-            if (epochDay != null) {
-                IconButton(onClick = onClear) { Icon(Icons.Filled.Clear, contentDescription = "Отстрани датум") }
-            } else {
-                Icon(Icons.Filled.Event, contentDescription = null)
-            }
-        },
-        interactionSource = interactionSource,
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
+    val label = "Рок на траење (опционално)"
+    val value = epochDay?.let { LocalDate.ofEpochDay(it).format(expirationFormatter) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clip(PillShape)
+            .background(MojRucekTheme.colors.greenContainer)
+            .clickable(role = Role.Button, onClick = onPick)
+            .semantics { contentDescription = "$label: ${value ?: "Избери датум"}" }
+            .padding(start = 20.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(
+                value ?: "Избери датум",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (value != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+        if (epochDay != null) {
+            CircleIconButton(
+                Icons.Outlined.Close,
+                contentDescription = "Отстрани датум",
+                onClick = onClear,
+                containerColor = Color.Transparent
+            )
+        } else {
+            Icon(
+                Icons.Outlined.Event,
+                contentDescription = null,
+                tint = MojRucekTheme.colors.darkOlive,
+                modifier = Modifier.padding(end = 12.dp).size(24.dp)
+            )
+        }
+    }
 }
 
 /** "Истекува за N дена" style label, or null when the item has no date or is far from expiring. */
@@ -522,7 +718,7 @@ private fun expirationLabel(epochDay: Long?): String? {
         days < 0 -> "Истечено"
         days == 0L -> "Истекува денес"
         days == 1L -> "Истекува утре"
-        days <= EXPIRING_SOON_DAYS -> "Истекува за $days дена"
+        days <= EXPIRING_SOON_DAYS -> "Истекува за ${MkPlural.days(days.toInt())}"
         else -> "Рок: ${LocalDate.ofEpochDay(epochDay).format(expirationFormatter)}"
     }
 }

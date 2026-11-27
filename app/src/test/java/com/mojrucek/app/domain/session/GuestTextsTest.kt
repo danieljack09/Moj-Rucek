@@ -4,9 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class GuestTextsTest {
-    @Test fun days_usesTheSingularOnlyForOne() {
+    @Test fun days_singularAfterNumbersEndingInOne() {
         assertEquals("1 ден", GuestTexts.days(1))
-        for (n in listOf(0, 2, 3, 11, 14, 21)) assertEquals("$n дена", GuestTexts.days(n))
+        for (n in listOf(0, 2, 3, 11, 14)) assertEquals("$n дена", GuestTexts.days(n))
+        assertEquals("21 ден", GuestTexts.days(21))
     }
 
     @Test fun settingsLine_followsTheStatus() {

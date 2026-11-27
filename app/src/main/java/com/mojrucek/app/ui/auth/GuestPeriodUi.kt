@@ -1,5 +1,6 @@
 package com.mojrucek.app.ui.auth
 
+import com.mojrucek.app.ui.components.AppDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,11 +49,13 @@ fun GuestExpiredDialog(container: AppContainer, onOpenSettings: () -> Unit) {
     // Remember at once that it was shown today, so it cannot come back before tomorrow, even if the app is killed.
     LaunchedEffect(show, uid) { if (show && uid != null) container.sessionRepository.markExpiredDialogShown(uid, today) }
     if (!show) return
-    AlertDialog(
+    AppDialog(
         onDismissRequest = { dismissedForNow = true },
-        title = { Text(GuestTexts.EXPIRED_TITLE) },
-        text = { Text(GuestTexts.EXPIRED_TEXT) },
-        confirmButton = { TextButton(onClick = { dismissedForNow = true; onOpenSettings() }) { Text("Поврзи со Google") } },
-        dismissButton = { TextButton(onClick = { dismissedForNow = true }) { Text("Подоцна") } }
+        title = GuestTexts.EXPIRED_TITLE,
+        text = GuestTexts.EXPIRED_TEXT,
+        confirmLabel = "Поврзи со Google",
+        onConfirm = { dismissedForNow = true; onOpenSettings() },
+        dismissLabel = "Подоцна",
+        onDismiss = { dismissedForNow = true }
     )
 }

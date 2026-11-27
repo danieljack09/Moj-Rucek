@@ -1,15 +1,12 @@
 package com.mojrucek.app.ui.navigation
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,10 +14,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -37,7 +30,9 @@ import com.mojrucek.app.ui.auth.GuestExpiredDialog
 import com.mojrucek.app.ui.sync.SyncCard
 import com.mojrucek.app.ui.sync.SyncConflictDialog
 import com.mojrucek.app.ui.auth.guestSettingsLine
+import com.mojrucek.app.ui.components.FloatingPillNavBar
 import com.mojrucek.app.ui.components.GenericViewModelFactory
+import com.mojrucek.app.ui.components.PillNavItem
 import com.mojrucek.app.ui.home.HomeScreen
 import com.mojrucek.app.ui.home.HomeViewModel
 import com.mojrucek.app.ui.ingredients.IngredientsScreen
@@ -55,6 +50,10 @@ import com.mojrucek.app.ui.settings.SettingsViewModel
 import com.mojrucek.app.ui.shopping.ShoppingScreen
 import com.mojrucek.app.ui.shopping.ShoppingViewModel
 
+private const val NAV_FADE_MILLIS = 200
+
+private val pillNavItems = bottomNavItems.map { PillNavItem(it.dest.route, it.label, it.icon) }
+
 @Composable
 fun MojRucekNavHost(container: AppContainer) {
     val navController = rememberNavController()
@@ -68,52 +67,35 @@ fun MojRucekNavHost(container: AppContainer) {
     SyncConflictDialog(container)
 
     Scaffold(
+        // Edge-to-edge: the outer Scaffold reserves no space. Screen content draws behind the
+        // floating nav bar (each tab list ends with Spacing.navBarClearance), and each screen's
+        // own Scaffold/TopAppBar handles the status bar.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (showBottomBar) {
-                Surface(
-                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                    shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    NavigationBar(containerColor = Color.Transparent) {
-                        bottomNavItems.forEach { item ->
-                            NavigationBarItem(
-                                selected = currentRoute == item.dest.route,
-                                onClick = {
-                                    navController.navigate(item.dest.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = { Icon(item.icon, contentDescription = item.label) },
-                                label = {
-                                    Text(
-                                        item.label,
-                                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Clip
-                                    )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            )
+                FloatingPillNavBar(
+                    items = pillNavItems,
+                    selectedRoute = currentRoute,
+                    onSelect = { item ->
+                        navController.navigate(item.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
                         }
                     }
-                }
+                )
             }
         }
-    ) { innerPadding ->
+    ) { _ ->
         NavHost(
             navController = navController,
             startDestination = Dest.Home.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = { fadeIn(tween(NAV_FADE_MILLIS)) },
+            exitTransition = { fadeOut(tween(NAV_FADE_MILLIS)) },
+            popEnterTransition = { fadeIn(tween(NAV_FADE_MILLIS)) },
+            popExitTransition = { fadeOut(tween(NAV_FADE_MILLIS)) }
         ) {
             composable(Dest.Home.route) {
                 val vm: HomeViewModel = viewModel(factory = GenericViewModelFactory {

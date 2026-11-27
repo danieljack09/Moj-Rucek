@@ -1,11 +1,11 @@
 package com.mojrucek.app.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Kitchen
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Kitchen
+import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Dest(val route: String) {
@@ -32,9 +32,9 @@ sealed class Dest(val route: String) {
 data class BottomNavItem(val dest: Dest, val label: String, val icon: ImageVector)
 
 val bottomNavItems = listOf(
-    BottomNavItem(Dest.Home, "Почетна", Icons.Filled.Home),
-    BottomNavItem(Dest.Ingredients, "Намирници", Icons.Filled.Kitchen),
-    BottomNavItem(Dest.Recipes, "Рецепти", Icons.Filled.MenuBook),
-    BottomNavItem(Dest.Planner, "Планер", Icons.Filled.CalendarMonth),
-    BottomNavItem(Dest.Shopping, "Пазарење", Icons.Filled.ShoppingCart)
+    BottomNavItem(Dest.Home, "Почетна", Icons.Outlined.Home),
+    BottomNavItem(Dest.Ingredients, "Намирници", Icons.Outlined.Kitchen),
+    BottomNavItem(Dest.Recipes, "Рецепти", Icons.AutoMirrored.Outlined.MenuBook),
+    BottomNavItem(Dest.Planner, "Планер", Icons.Outlined.CalendarMonth),
+    BottomNavItem(Dest.Shopping, "Пазарење", Icons.Outlined.ShoppingBasket)
 )

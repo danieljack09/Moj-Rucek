@@ -1,109 +1,24 @@
 package com.mojrucek.app.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.mojrucek.app.data.entity.IngredientCategory
 import com.mojrucek.app.domain.unit.MeasurementUnit
 import com.mojrucek.app.domain.unit.UnitConverter
-
-@Composable
-fun EmptyState(
-    message: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(32.dp)
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
-                Text(actionLabel)
-            }
-        }
-    }
-}
+import com.mojrucek.app.domain.text.MkPlural
 
 fun formatQuantityWithUnit(quantity: Double, unit: MeasurementUnit): String =
-    "${UnitConverter.formatQuantity(quantity)} ${unit.displayName}"
+    "${UnitConverter.formatQuantity(quantity)} ${MkPlural.unitLabel(quantity, unit)}"
 
 /**
- * A small circular badge showing a category's emoji — reused on ingredient
- * rows and anywhere else a category needs a compact, friendly icon.
- */
-@Composable
-fun CategoryEmojiBadge(category: IngredientCategory, size: Dp = 40.dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(category.emoji, fontSize = (size.value * 0.45f).sp)
-    }
-}
-
-/**
- * A horizontally scrollable row of category chips (icon + Macedonian name),
+ * A horizontally scrollable row of category chips (line icon + Macedonian name),
  * with an optional "Сите" (all) option and optional per-category counts.
- * The selected chip uses a soft sage-green container (the app's
- * primaryContainer color). Shared by the ingredient list's category filter
- * and the add/edit ingredient form's category picker.
+ * Single choice, so the selected chip is filled green ([AppChip], spec item 6).
+ * [contentPadding] insets the chips inside the scrolling row, so the row can run
+ * edge to edge while the first chip lines up with the screen content.
+ * Shared by the ingredient list's category filter and the add/edit ingredient form.
  */
 @Composable
 fun CategoryChipsRow(
@@ -113,47 +28,28 @@ fun CategoryChipsRow(
     modifier: Modifier = Modifier,
     showAllOption: Boolean = true,
     counts: Map<IngredientCategory, Int> = emptyMap(),
-    totalCount: Int? = null
+    totalCount: Int? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    ChipRow(modifier = modifier, contentPadding = contentPadding) {
         if (showAllOption) {
-            CategoryChip(
+            AppChip(
                 label = if (totalCount != null) "Сите ($totalCount)" else "Сите",
-                emoji = null,
                 selected = selected == null,
-                onClick = { onSelect(null) }
+                onClick = { onSelect(null) },
+                selectedStyle = ChipSelectionStyle.Filled
             )
         }
         categories.forEach { category ->
             val count = counts[category]
-            CategoryChip(
+            AppChip(
                 label = if (count != null) "${category.displayName} ($count)" else category.displayName,
-                emoji = category.emoji,
                 selected = selected == category,
-                onClick = { onSelect(category) }
+                onClick = { onSelect(category) },
+                selectedStyle = ChipSelectionStyle.Filled,
+                // Line icon in place of the category emoji (spec item 14); the emoji stays in the data.
+                leadingIcon = category.icon()
             )
         }
     }
-}
-
-@Composable
-private fun CategoryChip(label: String, emoji: String?, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label) },
-        leadingIcon = if (emoji != null) {
-            { Text(emoji) }
-        } else null,
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    )
 }

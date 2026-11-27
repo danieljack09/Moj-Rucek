@@ -1,6 +1,9 @@
 package com.mojrucek.app
 
 import android.app.Application
+import kotlinx.coroutines.flow.filter
+import com.mojrucek.app.debug.SampleRecipes
+import android.util.Log
 import com.mojrucek.app.di.AppContainer
 import com.mojrucek.app.notification.ExpiryReminderScheduler
 import com.mojrucek.app.notification.NotificationHelper
@@ -60,6 +63,21 @@ class MojRucekApplication : Application() {
                         container.syncService.syncNow(manual = false)
                     }
                 }
+        }
+
+        // DEBUG builds only: three sample recipes and some kitchen items for testing. Data belongs to an account,
+        // so this waits until one is signed in (and runs again after an account switch); it skips anything that
+        // already exists, so restarting never creates duplicates.
+        if (BuildConfig.DEBUG) {
+            applicationScope.launch {
+                container.currentOwner.flow
+                    .filter { OwnerKeys.isAccount(it) }
+                    .collectLatest {
+                        runCatching { SampleRecipes.seed(container.recipeRepository, container.ingredientRepository) }
+                            .onSuccess { (recipes, items) -> Log.d("SampleRecipes", "added $recipes recipes, $items kitchen items") }
+                            .onFailure { Log.w("SampleRecipes", "seeding failed", it) }
+                    }
+            }
         }
 
         // A deletion that was interrupted after the server record was removed: finish erasing the phone data.

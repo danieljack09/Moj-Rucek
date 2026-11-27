@@ -1,5 +1,10 @@
 package com.mojrucek.app.ui.home
 
+import java.time.LocalDate
+import com.mojrucek.app.domain.usecase.RecipeMatchingUseCase
+import com.mojrucek.app.domain.model.IngredientLine
+import com.mojrucek.app.domain.model.Readiness
+import com.mojrucek.app.data.entity.RecipeCategory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mojrucek.app.data.entity.Ingredient
@@ -25,8 +30,31 @@ import kotlinx.coroutines.launch
 
 data class TodayMealUi(val recipeId: Long, val recipeName: String)
 
-/** One day of the Home "Оваа недела" preview. [meal] is null when nothing is planned. */
-data class WeekDayUi(val dayOfWeek: Int, val isToday: Boolean, val meal: TodayMealUi?)
+/**
+ * What the Home meal preview sheet shows for a planned day. Built from data the ViewModel already
+ * loads (the recipes, the plan and the pantry): no extra database reads.
+ * [servings] is the day's planned servings (its override, else the plan's household servings), and
+ * the coverage numbers are matched at that serving count, the same way the Planner does.
+ */
+data class MealPreviewUi(
+    val imageUri: String?,
+    val category: RecipeCategory?,
+    val description: String?,
+    val totalTimeMinutes: Int,
+    val servings: Int,
+    val coveredIngredients: Int,
+    val totalIngredients: Int,
+    val readiness: Readiness
+)
+
+/** One day of the Home "Оваа недела" preview. [meal] and [preview] are null when nothing is planned. */
+data class WeekDayUi(
+    val dayOfWeek: Int,
+    val isToday: Boolean,
+    val meal: TodayMealUi?,
+    val date: LocalDate? = null,
+    val preview: MealPreviewUi? = null
+)
 
 data class HomeUiState(
     val isLoading: Boolean = true,
@@ -70,10 +98,34 @@ class HomeViewModel(
         ) { ingredients, recipes, thisWeekPlan, nextWeekPlan, shoppingItems ->
         val todayMeal: PlannedMeal? = thisWeekPlan?.meals?.firstOrNull { it.dayOfWeek == todayDayOfWeek }
         val todayRecipe = todayMeal?.recipeId?.let { id -> recipes.firstOrNull { it.recipe.id == id } }
+        val householdServings = thisWeekPlan?.weeklyPlan?.householdServings ?: 3
+        val inventoryLines = ingredients.map { IngredientLine(it.name, it.normalizedName, it.quantity, it.unit) }
         val weekDays = (1..7).map { dow ->
-            val recipe = thisWeekPlan?.meals?.firstOrNull { it.dayOfWeek == dow }?.recipeId
-                ?.let { id -> recipes.firstOrNull { it.recipe.id == id } }
-            WeekDayUi(dow, dow == todayDayOfWeek, recipe?.let { TodayMealUi(it.recipe.id, it.recipe.name) })
+            val meal = thisWeekPlan?.meals?.firstOrNull { it.dayOfWeek == dow }
+            val recipe = meal?.recipeId?.let { id -> recipes.firstOrNull { it.recipe.id == id } }
+            val preview = recipe?.let {
+                val servings = meal.servingsOverride ?: householdServings
+                val match = RecipeMatchingUseCase.match(
+                    it.recipe.id, it.recipe.name, recipeRepository.scaledIngredients(it, servings), inventoryLines
+                )
+                MealPreviewUi(
+                    imageUri = it.recipe.imageUri,
+                    category = it.recipe.category,
+                    description = it.recipe.description,
+                    totalTimeMinutes = it.recipe.totalTimeMinutes,
+                    servings = servings,
+                    coveredIngredients = match.coveredIngredients,
+                    totalIngredients = match.totalIngredients,
+                    readiness = match.readiness
+                )
+            }
+            WeekDayUi(
+                dow,
+                dow == todayDayOfWeek,
+                recipe?.let { TodayMealUi(it.recipe.id, it.recipe.name) },
+                date = thisWeekStart.plusDays((dow - 1).toLong()),
+                preview = preview
+            )
         }
 
         val matches = recipeRepository.matchAll(recipes, ingredients)

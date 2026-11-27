@@ -1,5 +1,6 @@
 package com.mojrucek.app.ui.auth
 
+import com.mojrucek.app.ui.theme.Spacing
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -60,23 +61,26 @@ fun AuthGate(container: AppContainer) {
 /** Fully blocking on purpose: no button, no retry. Only a correctly built app can fix this. */
 @Composable
 private fun ConfigErrorScreen() {
+    // Fully blocking on purpose: no button, no retry. Laid out like EmptyState, with the app mark on top.
     Scaffold { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp, vertical = 32.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 32.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("⚠️", style = MaterialTheme.typography.displayLarge)
-            Spacer(Modifier.height(16.dp))
+            AppMark(size = 80.dp)
+            Spacer(Modifier.height(Spacing.betweenSections))
             Text(
                 "Апликацијата не е правилно подесена",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 "Оваа верзија нема конфигурација за сметки и не може да се користи. Инсталирај ја официјалната верзија на апликацијата.",
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
         }

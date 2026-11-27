@@ -1,6 +1,7 @@
 package com.mojrucek.app.domain.limits
 
 import com.mojrucek.app.session.PermissionResult
+import com.mojrucek.app.domain.text.MkPlural
 
 /** A message for the user: [linkGoogle] adds the "link Google" button (for a guest whose period has ended). */
 data class LimitNotice(val title: String, val text: String, val linkGoogle: Boolean = false)
@@ -47,8 +48,8 @@ object LimitTexts {
             linkGoogle = true
         )
         is PermissionResult.TooMany -> LimitNotice(
-            "Најмногу ${result.max} рецепти по листа",
-            "За една листа избери најмногу ${result.max} различни рецепти од серверот."
+            "Најмногу ${MkPlural.recipes(result.max)} по листа",
+            "За една листа избери најмногу ${MkPlural.count(result.max, "различен рецепт", "различни рецепти")} од серверот."
         )
         PermissionResult.NeedsInternet -> LimitNotice(
             "Потребна е интернет врска",

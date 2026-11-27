@@ -1,0 +1,20 @@
+Sample recipe photos (debug builds only). All from Wikimedia Commons, all CC0 (public domain dedication).
+Resized to 1080 px on the long side, JPEG, all metadata (EXIF/GPS) removed.
+
+tavche_gravche.jpg
+  Original: "Gravče na tavče.jpg" (тавче гравче served in a restaurant in Skopje)
+  Source: https://commons.wikimedia.org/wiki/File:Grav%C4%8De_na_tav%C4%8De.jpg
+  Author: August Dominus
+  Licence: CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/
+
+musaka.jpg
+  Original: "Meat Moussaka - Kouzina, Brighton 2023-11-24.jpg"
+  Source: https://commons.wikimedia.org/wiki/File:Meat_Moussaka_-_Kouzina,_Brighton_2023-11-24.jpg
+  Author: Andy Li
+  Licence: CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/
+
+pileshko_so_oriz.jpg
+  Original: "Chicken breast, roasted with garlic olive oil and black pepper, on fried rice and peas with soy sauce - Massachusetts.jpg"
+  Source: https://commons.wikimedia.org/wiki/File:Chicken_breast,_roasted_with_garlic_olive_oil_and_black_pepper,_on_fried_rice_and_peas_with_soy_sauce_-_Massachusetts.jpg
+  Author: Daderot
+  Licence: CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/

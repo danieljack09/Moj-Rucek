@@ -18,7 +18,13 @@ import kotlinx.coroutines.launch
 
 enum class ReadinessFilter { ALL, CAN_COOK_NOW, ALMOST_READY, NEEDS_SHOPPING }
 
-data class RecipeListItem(val match: RecipeMatchResult, val category: RecipeCategory?, val totalTimeMinutes: Int)
+data class RecipeListItem(
+    val match: RecipeMatchResult,
+    val category: RecipeCategory?,
+    val totalTimeMinutes: Int,
+    /** The recipe's photo, from the Recipe already loaded for the list; null when it has none. */
+    val imageUri: String?
+)
 
 data class RecipesUiState(
     val isLoading: Boolean = true,
@@ -55,7 +61,7 @@ class RecipesViewModel(
 
         var items = matches.map {
             val recipe = byId.getValue(it.recipeId).recipe
-            RecipeListItem(it, recipe.category, recipe.totalTimeMinutes)
+            RecipeListItem(it, recipe.category, recipe.totalTimeMinutes, recipe.imageUri)
         }
 
         if (f.query.isNotBlank()) {

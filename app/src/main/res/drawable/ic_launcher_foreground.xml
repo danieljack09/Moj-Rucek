@@ -1,29 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher mark: a white line chef hat with a flame inside, drawn inside the 66dp safe zone
+     (all strokes within 33dp of the centre). Also used as the themed-icon monochrome layer. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Simple bowl-and-steam glyph, centered in the 72x72 safe zone -->
+    <!-- Hat crown: one soft three-lobed outline -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M28,58 h52 a26,22 0 0,1 -52,0 z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M30,58 a24,8 0 0,0 48,0 z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:strokeWidth="4"
+        android:pathData="M35,62 C28,60.5 25,53 28.5,47 C31.5,42 36.5,40.5 40.5,42 C40.5,33.5 47,28 54,28 C61,28 67.5,33.5 67.5,42 C71.5,40.5 76.5,42 79.5,47 C83,53 80,60.5 73,62"
         android:strokeColor="#FFFFFF"
-        android:pathData="M44,46 q2,-6 0,-10" />
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Band, with one seam line -->
     <path
-        android:fillColor="#FFFFFF"
-        android:strokeWidth="4"
+        android:pathData="M35,58 L35,77 L73,77 L73,58 M35,69.5 L73,69.5"
         android:strokeColor="#FFFFFF"
-        android:pathData="M54,46 q2,-6 0,-10" />
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Flame inside the crown -->
     <path
-        android:fillColor="#FFFFFF"
-        android:strokeWidth="4"
+        android:pathData="M54,60 C49.5,60 46.5,57 46.5,53 C46.5,49.5 49,47 51,43 C52.3,45.8 53.8,46.8 55.2,47.6 C56.2,45.8 56.4,43.6 55.6,41.5 C59.6,44.5 61.5,48.5 61.5,53 C61.5,57 58.5,60 54,60 Z"
         android:strokeColor="#FFFFFF"
-        android:pathData="M64,46 q2,-6 0,-10" />
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>
